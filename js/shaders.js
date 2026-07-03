@@ -485,6 +485,7 @@ void main(){
       col = cmap(uCmap, clamp(v * 0.5 + 0.5, 0.0, 1.0));
       a = clamp(abs(v), 0.0, 1.0);
     }
+    a = max(a - 0.04, 0.0) * 1.042;              // cut low-level haze
     a = clamp(a * uOpacity * 90.0 * dt, 0.0, 1.0);
     C += (1.0 - A) * a * col;
     A += (1.0 - A) * a;

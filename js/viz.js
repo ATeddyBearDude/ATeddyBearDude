@@ -277,59 +277,8 @@ class Renderer {
       this._drawBox(VP, sc, off, col);
     }
 
-    // --- slice plane
+    // --- volume raymarch (blended; drawn first so the slice cuts through it)
     const sliceIdx = Math.round(viz.sliceFrac * (sim.N - 1));
-    if (viz.showSlice && this.history && this.history.count > 0) {
-      const prog = this.progs.slice;
-      gl.useProgram(prog.p);
-      gl.bindVertexArray(this.emptyVAO);
-      gl.uniformMatrix4fv(prog.u.uVP, false, VP);
-      gl.uniform1i(prog.u.uAxis, viz.sliceAxis);
-      gl.uniform1f(prog.u.uFrac, (sliceIdx + 0.5) / sim.N);
-      gl.uniform1f(prog.u.uLayer, this.historyLayer(viz.scrubAgo || 0));
-      gl.uniform1i(prog.u.uN, sim.N);
-      gl.uniform1i(prog.u.uTX, sim.TX);
-      gl.uniform1i(prog.u.uBoundary, 1);
-      gl.uniform1i(prog.u.uIdx, sliceIdx);
-      gl.uniform1i(prog.u.uMode, viz.mode);
-      gl.uniform1i(prog.u.uComp, viz.comp);
-      gl.uniform1f(prog.u.uGain, viz.mode === 0 ? viz.gain : Math.sqrt(viz.gain));
-      gl.uniform1f(prog.u.uAlpha, viz.sliceAlpha);
-      gl.uniform1i(prog.u.uCmap, cmapIdx);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.history.tex);
-      gl.uniform1i(prog.u.uHist, 0);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, sim.tex.mat1);
-      gl.uniform1i(prog.u.uMat1, 1);
-      gl.disable(gl.CULL_FACE);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    }
-
-    // --- vector glyphs on the slice
-    if (viz.showGlyphs) {
-      const prog = this.progs.glyph;
-      const stride = Math.max(2, viz.glyphStride);
-      const n = Math.floor(sim.N / stride);
-      gl.useProgram(prog.p);
-      gl.bindVertexArray(this.emptyVAO);
-      gl.uniformMatrix4fv(prog.u.uVP, false, VP);
-      gl.uniform1i(prog.u.uN, sim.N);
-      gl.uniform1i(prog.u.uTX, sim.TX);
-      gl.uniform1i(prog.u.uBoundary, 1);
-      gl.uniform1i(prog.u.uAxis, viz.sliceAxis);
-      gl.uniform1i(prog.u.uIdx, sliceIdx);
-      gl.uniform1i(prog.u.uStride, stride);
-      gl.uniform1f(prog.u.uGain, Math.sqrt(viz.gain));
-      gl.uniform1f(prog.u.uScaleLen, viz.glyphScale * stride / sim.N);
-      gl.uniform1i(prog.u.uCmap, cmapIdx);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, sim.curField(viz.field));
-      gl.uniform1i(prog.u.uF, 0);
-      gl.drawArraysInstanced(gl.LINES, 0, 2, n * n);
-    }
-
-    // --- volume raymarch (blended last, premultiplied alpha)
     if (viz.showVolume) {
       const prog = this.progs.volume;
       gl.useProgram(prog.p);
@@ -357,6 +306,62 @@ class Renderer {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.disable(gl.BLEND);
       gl.enable(gl.DEPTH_TEST);
+    }
+
+    // --- slice plane
+    if (viz.showSlice && this.history && this.history.count > 0) {
+      const prog = this.progs.slice;
+      gl.useProgram(prog.p);
+      gl.bindVertexArray(this.emptyVAO);
+      gl.uniformMatrix4fv(prog.u.uVP, false, VP);
+      gl.uniform1i(prog.u.uAxis, viz.sliceAxis);
+      gl.uniform1f(prog.u.uFrac, (sliceIdx + 0.5) / sim.N);
+      gl.uniform1f(prog.u.uLayer, this.historyLayer(viz.scrubAgo || 0));
+      gl.uniform1i(prog.u.uN, sim.N);
+      gl.uniform1i(prog.u.uTX, sim.TX);
+      gl.uniform1i(prog.u.uBoundary, 1);
+      gl.uniform1i(prog.u.uIdx, sliceIdx);
+      gl.uniform1i(prog.u.uMode, viz.mode);
+      gl.uniform1i(prog.u.uComp, viz.comp);
+      gl.uniform1f(prog.u.uGain, viz.mode === 0 ? viz.gain : Math.sqrt(viz.gain));
+      gl.uniform1f(prog.u.uAlpha, viz.sliceAlpha);
+      gl.uniform1i(prog.u.uCmap, cmapIdx);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.history.tex);
+      gl.uniform1i(prog.u.uHist, 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, sim.tex.mat1);
+      gl.uniform1i(prog.u.uMat1, 1);
+      gl.disable(gl.CULL_FACE);
+      if (viz.sliceAlpha < 0.999) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      }
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.disable(gl.BLEND);
+    }
+
+    // --- vector glyphs on the slice
+    if (viz.showGlyphs) {
+      const prog = this.progs.glyph;
+      const stride = Math.max(2, viz.glyphStride);
+      const n = Math.floor(sim.N / stride);
+      gl.useProgram(prog.p);
+      gl.bindVertexArray(this.emptyVAO);
+      gl.uniformMatrix4fv(prog.u.uVP, false, VP);
+      gl.uniform1i(prog.u.uN, sim.N);
+      gl.uniform1i(prog.u.uTX, sim.TX);
+      gl.uniform1i(prog.u.uBoundary, 1);
+      gl.uniform1i(prog.u.uAxis, viz.sliceAxis);
+      gl.uniform1i(prog.u.uIdx, sliceIdx);
+      gl.uniform1i(prog.u.uStride, stride);
+      gl.uniform1f(prog.u.uGain, Math.sqrt(viz.gain));
+      gl.uniform1f(prog.u.uScaleLen, viz.glyphScale * stride / sim.N);
+      gl.uniform1i(prog.u.uCmap, cmapIdx);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, sim.curField(viz.field));
+      gl.uniform1i(prog.u.uF, 0);
+      gl.drawArraysInstanced(gl.LINES, 0, 2, n * n);
     }
     gl.bindVertexArray(null);
   }

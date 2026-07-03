@@ -53,15 +53,17 @@ const viz = {
 const PRESETS = {
   "Hertzian dipole (z)": () => {
     const c = defaultConfig();
-    Object.assign(viz, { mode: 2, cmap: "inferno", showVolume: true, showSlice: true,
-      showGlyphs: false, sliceAxis: 1, sliceFrac: 0.5, autoGainAt: 4.5, field: "E" });
+    Object.assign(viz, { mode: 1, comp: 2, cmap: "coolwarm", showVolume: true,
+      showSlice: true, showGlyphs: false, sliceAxis: 1, sliceFrac: 0.5,
+      opacity: 0.55, sliceAlpha: 1, autoGainAt: 4.5, field: "E" });
     return c;
   },
   "Rotating dipole (circular)": () => {
     const c = defaultConfig();
     c.sources[0].ellipDeg = 45;
-    Object.assign(viz, { mode: 2, cmap: "inferno", sliceAxis: 2, sliceFrac: 0.5,
-      showVolume: true, showSlice: true, showGlyphs: true, autoGainAt: 4.5, field: "E" });
+    Object.assign(viz, { mode: 1, comp: 0, cmap: "coolwarm", sliceAxis: 2,
+      sliceFrac: 0.5, showVolume: true, showSlice: true, showGlyphs: true,
+      opacity: 0.55, sliceAlpha: 1, autoGainAt: 4.5, field: "E" });
     return c;
   },
   "Plane-wave pulse (vacuum)": () => {
@@ -445,9 +447,9 @@ function autoGain() {
   for (let i = 3; i < data.length; i += 4) if (data[i] > 0) vals.push(data[i]);
   if (!vals.length) return;
   vals.sort((a, b) => a - b);
-  const p99 = vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.99))];
-  if (p99 > 1e-30) {
-    viz.gain = 0.9 / p99;
+  const p = vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.90))];
+  if (p > 1e-30) {
+    viz.gain = Math.min(0.9 / p, 1e8);
     syncStaticInputs();
   }
 }
