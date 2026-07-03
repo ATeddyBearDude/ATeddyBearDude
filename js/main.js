@@ -53,14 +53,14 @@ const viz = {
 const PRESETS = {
   "Hertzian dipole (z)": () => {
     const c = defaultConfig();
-    Object.assign(viz, { mode: 0, cmap: "inferno", showVolume: true, showSlice: true,
+    Object.assign(viz, { mode: 2, cmap: "inferno", showVolume: true, showSlice: true,
       showGlyphs: false, sliceAxis: 1, sliceFrac: 0.5, autoGainAt: 4.5, field: "E" });
     return c;
   },
   "Rotating dipole (circular)": () => {
     const c = defaultConfig();
     c.sources[0].ellipDeg = 45;
-    Object.assign(viz, { mode: 0, cmap: "inferno", sliceAxis: 2, sliceFrac: 0.5,
+    Object.assign(viz, { mode: 2, cmap: "inferno", sliceAxis: 2, sliceFrac: 0.5,
       showVolume: true, showSlice: true, showGlyphs: true, autoGainAt: 4.5, field: "E" });
     return c;
   },
@@ -100,7 +100,7 @@ const PRESETS = {
     c.sources = [{ ...defaultSource("plane"), dir: "+x", pos: [0.14, 0.5, 0.5] }];
     c.regions = [{ ...defaultRegion(), shape: "sphere", center: [0.5, 0.5, 0.5],
       radius: 0.18, eps: 2.25 }];
-    Object.assign(viz, { mode: 0, cmap: "inferno", gain: 1.5,
+    Object.assign(viz, { mode: 2, cmap: "inferno", gain: 1.5,
       showVolume: true, showSlice: true, showGlyphs: false,
       sliceAxis: 2, sliceFrac: 0.5, autoGainAt: 9, field: "E" });
     return c;
@@ -119,7 +119,7 @@ const PRESETS = {
     const c = defaultConfig();
     c.sources = [{ ...defaultSource("gauss"), dir: "+x", pos: [0.14, 0.5, 0.5],
       waistUm: 1.2 }];
-    Object.assign(viz, { mode: 0, cmap: "inferno", gain: 1.5,
+    Object.assign(viz, { mode: 2, cmap: "inferno", gain: 1.5,
       showVolume: true, showSlice: true, showGlyphs: false,
       sliceAxis: 2, sliceFrac: 0.5, autoGainAt: 8, field: "E" });
     return c;
@@ -227,8 +227,15 @@ function bindStatic() {
       }
     };
   }
-  $("vSliceAxis").onchange = e => { viz.sliceAxis = +e.target.value; renderer.history.count = 0; renderer.history.head = -1; };
-  $("vSliceFrac").oninput = e => { viz.sliceFrac = +e.target.value; };
+  $("vSliceAxis").onchange = e => {
+    viz.sliceAxis = +e.target.value;
+    renderer.history.count = 0; renderer.history.head = -1; viz.scrubAgo = 0;
+    if (!state.playing) { renderer.capture(sim, viz); updateScrubUI(); }
+  };
+  $("vSliceFrac").oninput = e => {
+    viz.sliceFrac = +e.target.value;
+    if (!state.playing && !state.validating) { viz.scrubAgo = 0; renderer.capture(sim, viz); }
+  };
   $("vSliceAlpha").oninput = e => { viz.sliceAlpha = +e.target.value; $("vSliceAlphaVal").textContent = viz.sliceAlpha.toFixed(2); };
   $("vGlyphStride").onchange = e => viz.glyphStride = Math.max(2, +e.target.value | 0);
   $("vGlyphScale").oninput = e => viz.glyphScale = +e.target.value;
@@ -237,7 +244,13 @@ function bindStatic() {
 
   $("btnPlay").onclick = togglePlay;
   $("btnStep").onclick = () => { if (!state.validating) { doSteps(1); } };
-  $("btnReset").onclick = () => { if (!state.validating) { sim.reset(); renderer.history.count = 0; renderer.history.head = -1; viz.scrubAgo = 0; updateScrubUI(); } };
+  $("btnReset").onclick = () => {
+    if (state.validating) return;
+    sim.reset();
+    renderer.history.count = 0; renderer.history.head = -1; viz.scrubAgo = 0;
+    if (!state.playing) renderer.capture(sim, viz);
+    updateScrubUI();
+  };
   $("stepsPerFrame").oninput = e => { state.stepsPerFrame = +e.target.value; $("spfVal").textContent = e.target.value; };
   $("scrub").oninput = e => {
     const h = renderer.history;
@@ -301,8 +314,9 @@ function updateLegend() {
   const stops = [];
   for (let i = 0; i <= 12; i++) stops.push(VIZ.cmapCss(viz.cmap, i / 12));
   bar.style.background = `linear-gradient(90deg, ${stops.join(",")})`;
-  $("legendMin").textContent = viz.mode === 0 ? "0" : "−1/gain";
-  $("legendMax").textContent = viz.mode === 0 ? "1/gain (|F|²)" : "+1/gain";
+  $("legendMin").textContent = viz.mode === 1 ? "−1/gain" : "0";
+  $("legendMax").textContent = viz.mode === 0 ? "1/gain (|F|²)"
+                             : viz.mode === 2 ? "1/gain (|F|)" : "+1/gain";
 }
 
 function updateNumericsReadout() {
@@ -422,12 +436,18 @@ function onPathEdit(e) {
 /* ------------------------------------------------------------ auto gain - */
 
 function autoGain() {
+  // Scale to the 99th percentile of |F|^2 on the current slice, not the max:
+  // point sources have a singular near-field cell that would otherwise crush
+  // the radiated wavefronts to black.
   const idx = Math.round(viz.sliceFrac * (sim.N - 1));
   const data = sim.readSlice(viz.field, viz.sliceAxis, idx);
-  let m = 0;
-  for (let i = 3; i < data.length; i += 4) if (data[i] > m) m = data[i];
-  if (m > 1e-30) {
-    viz.gain = 0.85 / m;
+  const vals = [];
+  for (let i = 3; i < data.length; i += 4) if (data[i] > 0) vals.push(data[i]);
+  if (!vals.length) return;
+  vals.sort((a, b) => a - b);
+  const p99 = vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.99))];
+  if (p99 > 1e-30) {
+    viz.gain = 0.9 / p99;
     syncStaticInputs();
   }
 }

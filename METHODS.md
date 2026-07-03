@@ -80,10 +80,11 @@ standard first-order FDTD material approximation.
 * **Spatial sampling:** `dx = λ_min / ppw` where λ_min is the shortest enabled
   source wavelength and ppw (points per wavelength) is clamped to **≥ 15**
   (default 15; raise it for lower numerical dispersion).
-* Numerical dispersion: at 15 cells/λ the on-axis phase-velocity error is
-  ≲ 0.5 %; the validation suite reports the theoretical FDTD group velocity for
-  the exact grid used so the measured speed can be compared against both c and
-  theory.
+* Numerical dispersion: on-axis at 15 cells/λ and S = 0.5 the group-velocity
+  error is ≈ 2 % (∝ (1 − S²)/ppw², i.e. second order — halving dx quarters it).
+  The validation suite computes the theoretical FDTD group velocity for the
+  exact grid used so the measured speed can be compared against both c and the
+  discrete-Maxwell prediction.
 
 ## 4. Sources
 
@@ -143,15 +144,20 @@ relative permeability μ_r, conductivity σ, or
 
 ## 7. Validation (in-app, "Validation" panel)
 
-1. **Wave speed = c in vacuum.** A pulsed (2-period) plane wave propagates
-   along +x through vacuum with PML boundaries. The Ey time series is recorded
-   at two probes D cells apart; the group delay is extracted by
-   cross-correlating the two series (with sub-step parabolic interpolation of
-   the correlation peak). Pass: |v − c| < 1.5 %. The report also prints the
-   theoretical FDTD group velocity on the same grid (from the 1-D discrete
-   dispersion relation `sin(ωdt/2)/(cdt) = sin(kdx/2)/dx`), against which the
-   measured value agrees more tightly — showing the residual is numerical
-   dispersion, not an error in the physics.
+1. **Wave speed = c in vacuum.** A pulsed plane wave propagates along +x
+   through vacuum with **periodic** boundaries — a genuinely infinite plane
+   wave. (Under PML the sheet must be tapered, i.e. a finite aperture, and
+   on-axis aperture diffraction advances the measured arrival superluminally
+   by ~1–2 % — a real physical effect of finite beams, not a solver error;
+   the periodic setup removes it.) The Ey time series is recorded at two
+   probes D cells apart; the group delay is extracted by cross-correlating
+   the two series with sub-step parabolic interpolation of the correlation
+   peak. Pass requires both: (a) the measured speed matches the **exact
+   discrete-Maxwell prediction** for the grid — the group velocity from the
+   1-D FDTD dispersion relation `sin(ωdt/2)/(c·dt) = sin(k·dx/2)/dx` — to
+   < 0.5 %, and (b) it equals c to < 2.5 %, the numerical-dispersion
+   tolerance at ≥ 15 cells/λ. The dispersion offset from c is second order
+   (∝ 1/ppw²) and shrinks as "cells/λ" is raised in the UI.
 
 2. **Dipole radiation pattern.** A CW z-oriented Hertzian dipole radiates in
    vacuum; after the wave fills the sampling sphere plus 8 periods of settling,
@@ -190,7 +196,7 @@ is adjustable in the UI, not by the platform.
 Fields are copied to a half-float linear-filterable atlas for volume
 raymarching; the slice view, vector glyphs, probes and validation read the
 full-precision 32-bit textures. Amplitude maps to color and opacity
-(perceptually uniform viridis/inferno for |E|², diverging coolwarm for signed
+(perceptually uniform viridis/inferno for |E|² and amplitude |E|, diverging coolwarm for signed
 components so wavefronts and the spatial oscillation at scale λ are directly
 visible); clip planes, slice position, colormap, gain and opacity are
 interactive. The time scrubber replays captured slice frames while paused

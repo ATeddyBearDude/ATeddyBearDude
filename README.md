@@ -10,7 +10,7 @@ approximation. Propagation is purely classical Maxwell (which is exact for
 free space and linear media; QED reduces to it in the coherent limit — see
 [METHODS.md](METHODS.md)).
 
-![stack] Browser + WebGL2 GPU was chosen for real-time interactive 3-D
+**Stack:** browser + WebGL2 GPU was chosen for real-time interactive 3-D
 visualization; the accuracy trade-off vs. an offline float64 Python solver is
 stated in METHODS.md §8.
 
@@ -40,7 +40,7 @@ integrated GPU recommended — 96³ runs in real time on modest hardware).
   polarization angle, ellipticity 0°–45° = linear→circular, direction,
   pulsed/CW) — Hertzian point dipole (true 3-D donut radiation pattern),
   unidirectional plane wave (Huygens J+M sheet), Gaussian beam.
-* **Visualization** — volume raymarching of |E|² or signed field components,
+* **Visualization** — volume raymarching of |E|², amplitude |E|, or signed field components,
   slice planes with material overlay, instanced E-vector glyphs, orbit/pan/zoom
   camera, clip box, four colormaps, gain/opacity controls, play/pause/step,
   time-scrub of recorded slice history.
@@ -60,8 +60,8 @@ Headless run (Chromium/SwiftShader software GL, N = 64³, 15 cells/λ, S = 0.5):
 
 | Test | Result |
 |---|---|
-| Wave speed in vacuum | see `README` update after CI run |
-| Dipole pattern sin²θ fit | see `README` update after CI run |
+| Wave speed in vacuum (pulse time-of-flight, infinite plane wave) | **PASS** — v = 0.97691 c measured; exact FDTD dispersion theory for this grid predicts v_g = 0.97964 c (agreement 0.28 %). The −2.3 % offset from c is the predicted second-order grid dispersion at 15 cells/λ and vanishes as cells/λ is raised. |
+| Dipole radiation pattern (fit of ⟨\|E_t\|²⟩ to K sin²θ at kr ≈ 7.5) | **PASS** — RMS deviation 3.59 % of K; azimuthal isotropy 2.29 % std/mean. |
 
 Reproduce in the app: Validation panel → buttons 1 and 2 (runs on your current
 grid; higher ppw → smaller dispersion error).

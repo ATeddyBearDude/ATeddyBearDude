@@ -28,28 +28,31 @@ function fdtdGroupVelocity(omega, dx, dt) {
 
 async function runSpeedTest(app, onProgress) {
   const saved = structuredClone(app.cfg);
-  const N = app.cfg.N, pmlW = 10;
+  const N = app.cfg.N;
   const lambda = 1.0;
+  // Periodic transverse boundaries -> a genuinely infinite plane wave.
+  // (Under PML the sheet must be tapered, i.e. a finite aperture, and on-axis
+  // diffraction advances the measured arrival superluminally by ~1-2%.)
   const cfg = {
     ...structuredClone(app.cfg),
-    boundary: "pml", pmlW, regions: [],
+    boundary: "periodic", regions: [],
     sources: [{
-      enabled: true, type: "plane", dir: "+x", pos: [(pmlW + 3) / N, 0.5, 0.5],
+      enabled: true, type: "plane", dir: "+x", pos: [0.15, 0.5, 0.5],
       amplitude: 1, lambda, phaseDeg: 0, chiDeg: 0, ellipDeg: 0,
-      pulsed: true, pulsePeriods: 2,
+      pulsed: true, pulsePeriods: 1,
     }],
   };
   app.applyConfig(cfg);
   const sim = app.sim;
   try {
-    const srcX = Math.round((pmlW + 3) / N * N);
-    const x1 = srcX + 6;
-    const x2 = N - pmlW - 6;
-    const D = x2 - x1;
-    if (D < 8) throw new Error("Grid too small for the speed test (need N >= 48).");
+    const srcX = Math.round(0.15 * N);
+    const x1 = srcX + 8;
+    const D = Math.floor(0.45 * N);
+    const x2 = x1 + D;
+    if (D < 8 || x2 > N - 2) throw new Error("Grid too small for the speed test (need N >= 48).");
     const cy = Math.floor(N / 2);
-    const tau = 2 * lambda, t0 = 3.5 * tau;
-    const tEnd = t0 + (x2 - srcX) * sim.dx + 5 * tau;
+    const tau = 1 * lambda, t0 = 3.5 * tau;
+    const tEnd = t0 + (x2 - srcX) * sim.dx + 3.5 * tau;
     const steps = Math.ceil(tEnd / sim.dt);
     const s1 = new Float64Array(steps), s2 = new Float64Array(steps);
     for (let s = 0; s < steps; s++) {
@@ -83,15 +86,21 @@ async function runSpeedTest(app, onProgress) {
     const errC = (v - 1) * 100;
     const errVg = (v / vg - 1) * 100;
     const peak = Math.max(...s2.map(Math.abs));
+    // Pass = the pulse moves at c within the grid's numerical-dispersion
+    // tolerance AND matches the exact discrete-Maxwell prediction closely.
     return {
-      pass: Math.abs(errC) < 1.5 && peak > 1e-4,
+      pass: Math.abs(errVg) < 0.5 && Math.abs(errC) < 2.5 && peak > 1e-4,
       v, errC, vg, errVg,
       detail:
-        `Probes ${D} cells (${(D * sim.dx).toFixed(3)} um) apart; delay ` +
+        `Infinite plane-wave pulse (periodic boundaries), probes ${D} cells ` +
+        `(${(D * sim.dx).toFixed(3)} um) apart; group delay ` +
         `${(delay * FDTD.TIME_UNIT_FS).toFixed(2)} fs.\n` +
-        `Measured speed v = ${v.toFixed(5)} c  (error vs c: ${errC.toFixed(3)}%).\n` +
-        `FDTD theory predicts group velocity ${vg.toFixed(5)} c on this grid ` +
-        `(measured deviates from it by ${errVg.toFixed(3)}%).`,
+        `Measured speed v = ${v.toFixed(5)} c  (deviation from c: ${errC.toFixed(3)}%).\n` +
+        `Exact FDTD dispersion theory for this grid (${sim.ppwEff} cells/lambda, ` +
+        `S = ${sim.S}) predicts v_g = ${vg.toFixed(5)} c; measured agrees to ` +
+        `${errVg.toFixed(3)}%.\n` +
+        `The small offset from c is the second-order grid dispersion; it ` +
+        `shrinks as 1/(cells per wavelength)^2 - raise "cells/lambda" and rerun.`,
     };
   } finally {
     app.applyConfig(saved);

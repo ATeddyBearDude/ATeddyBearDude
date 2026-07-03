@@ -476,6 +476,10 @@ void main(){
       float v = f.w * uGain;
       col = cmap(uCmap, clamp(v, 0.0, 1.0));
       a = clamp(v, 0.0, 1.0);
+    } else if (uMode == 2){
+      float v = sqrt(max(f.w, 0.0)) * uGain;
+      col = cmap(uCmap, clamp(v, 0.0, 1.0));
+      a = clamp(v, 0.0, 1.0);
     } else {
       float v = f[uComp] * uGain;
       col = cmap(uCmap, clamp(v * 0.5 + 0.5, 0.0, 1.0));
@@ -518,8 +522,9 @@ out vec4 o;
 void main(){
   vec4 f = texture(uHist, vec3(vAB, uLayer));
   vec3 col;
-  if (uMode == 0) col = cmap(uCmap, clamp(f.w * uGain, 0.0, 1.0));
-  else            col = cmap(uCmap, clamp(f[uComp] * uGain * 0.5 + 0.5, 0.0, 1.0));
+  if      (uMode == 0) col = cmap(uCmap, clamp(f.w * uGain, 0.0, 1.0));
+  else if (uMode == 2) col = cmap(uCmap, clamp(sqrt(max(f.w, 0.0)) * uGain, 0.0, 1.0));
+  else                 col = cmap(uCmap, clamp(f[uComp] * uGain * 0.5 + 0.5, 0.0, 1.0));
 
   // material overlay so obstacles / dielectrics are visible on the slice
   ivec2 q = ivec2(clamp(vAB, 0.0, 0.9999) * float(uN));
