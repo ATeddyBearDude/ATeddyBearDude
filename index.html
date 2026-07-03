@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3-D EM Wave Simulator — FDTD Maxwell solver (WebGL2)</title>
+<style>
+  :root {
+    --bg: #0e0f13; --panel: #16181d; --panel2: #1c1f26; --line: #2a2e37;
+    --ink: #c9d1d9; --ink2: #8b93a1; --accent: #3987e5; --good: #2ea36b; --bad: #d05050;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; background: var(--bg); color: var(--ink);
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  #view { flex: 1; position: relative; min-width: 0; }
+  #glcanvas { width: 100%; height: 100%; display: block; touch-action: none; }
+  #hud {
+    position: absolute; left: 10px; top: 10px; pointer-events: none;
+    background: rgba(14,15,19,0.72); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 10px; font-size: 12px; color: var(--ink2);
+  }
+  #hud b { color: var(--ink); font-weight: 600; }
+  #axisLegend {
+    position: absolute; left: 10px; bottom: 10px; pointer-events: none;
+    font-size: 11px; color: var(--ink2);
+    background: rgba(14,15,19,0.72); border: 1px solid var(--line);
+    border-radius: 6px; padding: 4px 8px;
+  }
+  #errBox {
+    position: absolute; left: 10px; right: 10px; bottom: 46px; display: none;
+    background: #3a1518; border: 1px solid #7c2d33; color: #f0c0c0;
+    padding: 8px 10px; border-radius: 6px; white-space: pre-wrap;
+    font-family: ui-monospace, monospace; font-size: 11px; max-height: 40%;
+    overflow: auto; z-index: 10;
+  }
+  #panel {
+    width: 372px; flex: none; overflow-y: auto; background: var(--panel);
+    border-left: 1px solid var(--line); padding: 10px 12px 40px;
+  }
+  .row select { max-width: 190px; }
+  .row { flex-wrap: wrap; }
+  h1 { font-size: 15px; margin: 2px 0 2px; font-weight: 650; }
+  .sub { color: var(--ink2); font-size: 11.5px; margin-bottom: 10px; }
+  details { border: 1px solid var(--line); border-radius: 7px; margin: 8px 0; background: var(--panel2); }
+  summary { cursor: pointer; padding: 7px 10px; font-weight: 600; user-select: none; }
+  details > div { padding: 4px 10px 10px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+  .row label:first-child { flex: 0 0 118px; color: var(--ink2); }
+  .row input[type=range] { flex: 1; min-width: 0; }
+  .row .val { flex: 0 0 58px; text-align: right; font-variant-numeric: tabular-nums; }
+  input, select, button {
+    background: #23262e; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 5px; padding: 3px 6px; font: inherit;
+  }
+  input[type=number] { width: 72px; }
+  input[type=checkbox] { accent-color: var(--accent); }
+  input[type=range] { accent-color: var(--accent); padding: 0; border: none; background: transparent; }
+  button { cursor: pointer; }
+  button:hover { border-color: #3a4150; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .transport { display: flex; gap: 6px; align-items: center; margin: 8px 0; }
+  .transport button { min-width: 56px; }
+  .card {
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0;
+    background: #191c22;
+  }
+  .card .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; }
+  .grid2 .row label:first-child { flex-basis: 62px; }
+  .mini { font-size: 11px; color: var(--ink2); }
+  .readouts { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 12px; font-size: 12px; }
+  .readouts div { display: flex; justify-content: space-between; }
+  .readouts span { color: var(--ink2); }
+  .readouts b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  #legendBar { height: 10px; border-radius: 4px; border: 1px solid var(--line); margin: 4px 0 2px; }
+  .legendLabels { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink2); }
+  pre#valOut {
+    white-space: pre-wrap; font: 11px ui-monospace, monospace; background: #12141a;
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px; min-height: 40px;
+  }
+  .ok { color: var(--good); font-weight: 700; } .fail { color: var(--bad); font-weight: 700; }
+  #valCanvas { width: 100%; background: #14161a; border: 1px solid var(--line); border-radius: 6px; }
+  a { color: var(--accent); }
+  .note { font-size: 11px; color: var(--ink2); margin: 4px 0; }
+</style>
+</head>
+<body>
+<div id="view">
+  <canvas id="glcanvas"></canvas>
+  <div id="hud"><b id="hudTime">t = 0 fs</b> · step <span id="hudStep">0</span> · <span id="hudFps">0</span> fps</div>
+  <div id="axisLegend">drag: orbit · shift-drag / right-drag: pan · wheel: zoom</div>
+  <div id="errBox"></div>
+</div>
+
+<div id="panel">
+  <h1>3-D EM Wave Simulator</h1>
+  <div class="sub">
+    Full-vector Maxwell (FDTD, Yee grid + CPML) on the GPU.
+    <b>Units:</b> normalized c&thinsp;=&thinsp;&epsilon;&#8320;&thinsp;=&thinsp;&mu;&#8320;&thinsp;=&thinsp;1;
+    lengths in &micro;m, time shown in fs (1 unit = 3.336 fs).
+    See <a href="METHODS.md" target="_blank">METHODS.md</a>.
+  </div>
+
+  <div class="transport">
+    <button id="btnPlay" class="primary">Pause</button>
+    <button id="btnStep">Step</button>
+    <button id="btnReset">Reset</button>
+    <label class="mini" style="margin-left:auto">steps/frame</label>
+    <input id="stepsPerFrame" type="range" min="1" max="12" step="1" value="3" style="width:70px">
+    <span id="spfVal" class="mini">3</span>
+  </div>
+  <div class="row">
+    <label>time scrub (slice)</label>
+    <input id="scrub" type="range" min="0" max="0" step="1" value="0" disabled>
+    <span class="val mini" id="scrubLabel">live</span>
+  </div>
+
+  <div class="row">
+    <label>Preset</label>
+    <select id="preset"></select>
+  </div>
+
+  <details open><summary>Grid &amp; numerics</summary><div>
+    <div class="row"><label>grid N&sup3;</label>
+      <select id="inN">
+        <option>48</option><option>64</option><option>80</option><option selected>96</option>
+        <option>112</option><option>128</option><option>160</option>
+      </select>
+      <span class="mini">cells/side</span></div>
+    <div class="row"><label>cells / &lambda; (&ge;15)</label>
+      <input id="inPpw" type="number" min="15" max="40" step="1" value="15"></div>
+    <div class="row"><label>Courant S</label>
+      <input id="inCourant" type="range" min="0.2" max="1.0" step="0.05" value="0.5">
+      <span class="val" id="courantVal">0.50</span></div>
+    <div class="row"><label>boundary</label>
+      <select id="inBoundary">
+        <option value="pml" selected>PML (absorbing, open space)</option>
+        <option value="reflecting">PEC (reflecting)</option>
+        <option value="periodic">Periodic</option>
+      </select></div>
+    <div class="row"><label>PML width</label>
+      <input id="inPmlW" type="number" min="4" max="20" step="1" value="10">
+      <span class="mini">cells</span></div>
+    <div class="note">dt = S&middot;dx/(c&radic;3) — the 3-D Courant/CFL stability bound (S &le; 1). dx = &lambda;<sub>min</sub>/(cells per &lambda;). Changing these rebuilds &amp; resets fields.</div>
+    <div class="readouts">
+      <div><span>dx</span><b id="roDx">—</b></div>
+      <div><span>dt</span><b id="roDt">—</b></div>
+      <div><span>domain</span><b id="roDomain">—</b></div>
+      <div><span>cells</span><b id="roCells">—</b></div>
+      <div><span>GPU memory</span><b id="roMem">—</b></div>
+      <div><span>steps/s</span><b id="roSps">—</b></div>
+    </div>
+  </div></details>
+
+  <details open><summary>Sources</summary><div>
+    <div id="divSources"></div>
+    <button id="btnAddSource">+ add source</button>
+    <div class="note">Plane/Gaussian sheets are unidirectional (Huygens J+M pair).
+      Plane-wave amplitude is the E-field amplitude of the launched wave.
+      Ellipticity 0&deg; = linear, 45&deg; = circular. Changing &lambda; rebuilds the grid
+      (dx tracks the shortest wavelength).</div>
+  </div></details>
+
+  <details><summary>Media (regions)</summary><div>
+    <div id="divRegions"></div>
+    <button id="btnAddRegion">+ add region</button>
+    <div class="note">Regions apply in order (later overrides earlier), sampled at cell
+      centers. Types: dielectric (&epsilon;<sub>r</sub>, &mu;<sub>r</sub>, &sigma;), PEC
+      (perfect conductor), Drude (dispersive metal:
+      &epsilon;(&omega;) = 1 &minus; &omega;<sub>p</sub>&sup2;/(&omega;&sup2; + i&gamma;&omega;), via ADE).</div>
+  </div></details>
+
+  <details open><summary>Visualization</summary><div>
+    <div class="row"><label>field</label>
+      <select id="vField"><option value="E" selected>E (electric)</option><option value="H">H (magnetic)</option></select>
+      <label><input id="vShowVolume" type="checkbox" checked> volume</label>
+      <label><input id="vShowSlice" type="checkbox" checked> slice</label>
+      <label><input id="vShowGlyphs" type="checkbox"> vectors</label></div>
+    <div class="row"><label>quantity</label>
+      <select id="vMode"><option value="0" selected>intensity |F|&sup2;</option><option value="1">signed component</option></select>
+      <select id="vComp"><option value="0">Fx</option><option value="1">Fy</option><option value="2" selected>Fz</option></select></div>
+    <div class="row"><label>colormap</label>
+      <select id="vCmap"><option>viridis</option><option selected>inferno</option><option>coolwarm</option><option>gray</option></select>
+      <button id="btnAutoGain">Auto-scale</button></div>
+    <div id="legendBar"></div>
+    <div class="legendLabels"><span id="legendMin">0</span><span id="legendMax">1</span></div>
+    <div class="row"><label>gain (log&#8321;&#8320;)</label>
+      <input id="vGain" type="range" min="-2" max="7" step="0.1" value="1.5">
+      <span class="val" id="vGainVal"></span></div>
+    <div class="row"><label>volume opacity</label>
+      <input id="vOpacity" type="range" min="0.05" max="4" step="0.05" value="1"><span class="val" id="vOpacityVal">1.00</span></div>
+    <div class="row"><label>ray steps</label>
+      <input id="vSteps" type="range" min="48" max="384" step="16" value="160"><span class="val" id="vStepsVal">160</span></div>
+    <div class="row"><label>clip X</label>
+      <input id="vClipX0" type="range" min="0" max="1" step="0.01" value="0">
+      <input id="vClipX1" type="range" min="0" max="1" step="0.01" value="1"></div>
+    <div class="row"><label>clip Y</label>
+      <input id="vClipY0" type="range" min="0" max="1" step="0.01" value="0">
+      <input id="vClipY1" type="range" min="0" max="1" step="0.01" value="1"></div>
+    <div class="row"><label>clip Z</label>
+      <input id="vClipZ0" type="range" min="0" max="1" step="0.01" value="0">
+      <input id="vClipZ1" type="range" min="0" max="1" step="0.01" value="1"></div>
+    <div class="row"><label>slice axis / pos</label>
+      <select id="vSliceAxis"><option value="0">x</option><option value="1" selected>y</option><option value="2">z</option></select>
+      <input id="vSliceFrac" type="range" min="0" max="1" step="0.005" value="0.5"></div>
+    <div class="row"><label>slice opacity</label>
+      <input id="vSliceAlpha" type="range" min="0.1" max="1" step="0.05" value="1"><span class="val" id="vSliceAlphaVal">1.00</span></div>
+    <div class="row"><label>vector stride / len</label>
+      <input id="vGlyphStride" type="number" min="2" max="16" step="1" value="4" style="width:52px">
+      <input id="vGlyphScale" type="range" min="0.3" max="4" step="0.1" value="1.5"></div>
+  </div></details>
+
+  <details open><summary>Validation</summary><div>
+    <div class="row">
+      <button id="btnValSpeed">1 &middot; Wave speed = c</button>
+      <button id="btnValDipole">2 &middot; Dipole pattern</button>
+    </div>
+    <div class="mini" id="valProgress"></div>
+    <pre id="valOut">Run a test: (1) pulsed plane wave timed between two probes in vacuum; (2) CW Hertzian dipole fit to the exact sin&sup2;&theta; pattern.</pre>
+    <canvas id="valCanvas" height="240" style="display:none"></canvas>
+  </div></details>
+
+  <details><summary>Physics notes</summary><div class="note" style="padding-bottom:8px">
+    <p><b>Classical core.</b> The solver integrates the two time-domain Maxwell curl
+    equations for the full 3-D vector fields E and H — no scalar, paraxial or 2-D
+    reduction. For propagation in vacuum and linear media this is <i>exact</i>
+    classical electrodynamics, and QED reduces to it in the classical/coherent
+    limit; adding quantum formalism to the propagation engine would only reduce
+    accuracy. Nothing in this simulator is quantum. The Hertzian-dipole source is
+    the classical limit of an oscillating emitter (the same radiation pattern QED
+    predicts for the coherent limit of dipole transitions).</p>
+    <p><b>Numerics.</b> Yee staggered grid, leapfrog in time, CPML absorbing
+    boundaries, semi-implicit conductivity, Drude dispersion via an auxiliary
+    differential equation. Stability: c&middot;dt &le; dx/&radic;3 (enforced).
+    Full derivations in <a href="METHODS.md" target="_blank">METHODS.md</a>.</p>
+  </div></details>
+</div>
+
+<script src="js/shaders.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/viz.js"></script>
+<script src="js/validate.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
