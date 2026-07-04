@@ -61,12 +61,13 @@
     position:absolute; transform:translate(-50%,-50%); pointer-events:none;
     font-family:var(--disp); text-transform:uppercase; white-space:nowrap;
     letter-spacing:.55em; text-indent:.55em; font-size:15px; font-weight:600;
-    color:rgba(233,237,251,.32); text-align:center;
+    color:rgba(238,242,255,.52); text-align:center;
+    text-shadow:0 0 18px rgba(160,178,235,.35);
   }
   .cluster-label small{
     display:block; margin-top:8px; letter-spacing:.28em; text-indent:.28em;
     font-family:var(--mono); font-size:9.5px; font-weight:400;
-    color:rgba(147,160,196,.42); text-transform:none;
+    color:rgba(168,181,216,.62); text-transform:none; text-shadow:none;
   }
   /* ---------- cards ---------- */
   .card{
@@ -103,7 +104,8 @@
   .card .eyebrow{
     display:flex; align-items:center; gap:7px;
     font-family:var(--mono); font-size:9px; letter-spacing:.22em;
-    text-transform:uppercase; color:var(--ink-dim);
+    text-transform:uppercase;
+    color:color-mix(in srgb, var(--acc) 42%, #d5ddf5);
   }
   .star{
     width:11px;height:11px;flex:none;background:var(--acc);
@@ -357,10 +359,10 @@ const COMPS = [
  about:"The university-level physics world cup: teams research open-ended problems for months, then attack, defend, and referee each other's solutions in live Physics Fights.",
  hist:"Growing out of Ukrainian and French tournament traditions, the IPT held its first international edition in 2009 and now rotates between European host universities each spring.",
  site:"https://iptnet.info/",probs:"https://iptnet.info/problems/",probsLabel:"Problem archive"},
-{id:"plancks",cat:"phys",acr:"PLANCKS",name:"Physics League Across Numerous Countries for Kick-ass Students",est:2014,univ:true,noProbs:true,
+{id:"plancks",cat:"phys",acr:"PLANCKS",name:"Physics League Across Numerous Countries for Kick-ass Students",est:2014,univ:true,
  about:"Europe's team physics theory contest for bachelor and master students: teams of three or four battle through four hours of graduate-flavored problems at a different host city each year.",
  hist:"Dreamed up by Dutch physics students and first held in Utrecht in 2014 under the International Association of Physics Students, PLANCKS has grown national preliminaries in over two dozen countries.",
- site:"https://www.iaps.info/plancks/",probs:null},
+ site:"https://www.iaps.info/plancks/",probs:"https://plancks.uk/about/past-papers/",probsLabel:"Past papers"},
 {id:"upc",cat:"phys",acr:"UPC",name:"University Physics Competition",est:2010,univ:true,
  about:"A 48-hour online team contest: three undergraduates, one weekend, one open modeling problem — anything from asteroid deflection to spacecraft trajectories — written up as a short paper.",
  hist:"Founded in 2010 by American physicists as a physics answer to mathematical modeling contests, it now draws hundreds of team papers from universities worldwide every November.",
@@ -739,7 +741,11 @@ function flyTo(x, y, s, ms=950){
 
 document.getElementById("zin").onclick  = ()=> zoomAt(innerWidth/2, innerHeight/2, cam.s*1.25);
 document.getElementById("zout").onclick = ()=> zoomAt(innerWidth/2, innerHeight/2, cam.s/1.25);
-document.getElementById("zreset").onclick = ()=>{ setActiveChip(null); flyTo(HOME.x, HOME.y, HOME.s); };
+document.getElementById("zreset").onclick = ()=>{
+  /* home = the physics constellation at the map's origin */
+  setActiveChip(dock.querySelector(".chip"));
+  flyTo(CATS.phys.x, CATS.phys.y, 0.62);
+};
 
 addEventListener("keydown", e=>{
   if (overlay.classList.contains("open")){
@@ -764,7 +770,7 @@ for (const [cat, C] of Object.entries(CATS)){
   b.className = "chip"; b.type = "button";
   b.style.setProperty("--acc", C.color);
   b.innerHTML = `<i class="star"></i>${C.name.replace("­","")}`;
-  b.onclick = ()=>{ setActiveChip(b); dismissHint(); flyTo(C.x, C.y+140, 0.82); };
+  b.onclick = ()=>{ setActiveChip(b); dismissHint(); flyTo(C.x, C.y, 0.78); };
   dock.appendChild(b);
 }
 function setActiveChip(b){
@@ -848,6 +854,30 @@ function seedStars(){
 seedStars();
 addEventListener("resize", seedStars);
 
+/* soft-glow star sprites: white-hot core, colored halo, gaussian-ish falloff */
+function hexA(hex, a){
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;
+}
+const spriteCache = new Map();
+function starSprite(col){
+  let c = spriteCache.get(col);
+  if (c) return c;
+  c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d");
+  const grad = g.createRadialGradient(32,32,0, 32,32,32);
+  grad.addColorStop(0,    "rgba(255,255,255,1)");
+  grad.addColorStop(0.07, hexA(col, .95));
+  grad.addColorStop(0.16, hexA(col, .42));
+  grad.addColorStop(0.34, hexA(col, .13));
+  grad.addColorStop(0.65, hexA(col, .035));
+  grad.addColorStop(1,    hexA(col, 0));
+  g.fillStyle = grad;
+  g.fillRect(0,0,64,64);
+  spriteCache.set(col, c);
+  return c;
+}
+
 let meteor = null, nextMeteor = performance.now() + 4500;
 function drawSky(now){
   ctx.clearRect(0,0,innerWidth,innerHeight);
@@ -858,22 +888,27 @@ function drawSky(now){
     const L = st.L;
     const a = REDUCED ? L.base : L.base + L.amp*Math.sin(st.tw + now/1000*st.ts);
     ctx.globalAlpha = Math.max(0.08, a);
-    ctx.fillStyle = st.col;
     let x = (st.x + ox*L.p) % (innerWidth*1.4), y = (st.y + oy*L.p) % (innerHeight*1.4);
     if (x < -innerWidth*0.2) x += innerWidth*1.4;
     if (y < -innerHeight*0.2) y += innerHeight*1.4;
     const r = L.p > 0.1 ? st.r*zk : st.r;
-    if (L.p > 0.1){ ctx.shadowColor = st.col; ctx.shadowBlur = 7; }
-    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
-    if (L.p > 0.1) ctx.shadowBlur = 0;
+    const halo = r * (L.p > 0.1 ? 11 : L.p > 0.03 ? 8.5 : 7);
+    ctx.drawImage(starSprite(st.col), x - halo/2, y - halo/2, halo, halo);
     if (st.flare){
-      ctx.globalAlpha = Math.max(0.05, a*0.4);
-      ctx.strokeStyle = st.col; ctx.lineWidth = 0.7;
-      const f = r*4.6;
-      ctx.beginPath();
-      ctx.moveTo(x-f, y); ctx.lineTo(x+f, y);
-      ctx.moveTo(x, y-f); ctx.lineTo(x, y+f);
-      ctx.stroke();
+      const f = r*5.2, aa = Math.max(0.04, a*0.5);
+      const gh = ctx.createLinearGradient(x-f, y, x+f, y);
+      gh.addColorStop(0, hexA(st.col, 0));
+      gh.addColorStop(0.5, hexA(st.col, aa));
+      gh.addColorStop(1, hexA(st.col, 0));
+      const gv = ctx.createLinearGradient(x, y-f, x, y+f);
+      gv.addColorStop(0, hexA(st.col, 0));
+      gv.addColorStop(0.5, hexA(st.col, aa));
+      gv.addColorStop(1, hexA(st.col, 0));
+      ctx.globalAlpha = 1; ctx.lineWidth = 0.8;
+      ctx.strokeStyle = gh;
+      ctx.beginPath(); ctx.moveTo(x-f, y); ctx.lineTo(x+f, y); ctx.stroke();
+      ctx.strokeStyle = gv;
+      ctx.beginPath(); ctx.moveTo(x, y-f); ctx.lineTo(x, y+f); ctx.stroke();
     }
   }
   /* occasional meteor */
