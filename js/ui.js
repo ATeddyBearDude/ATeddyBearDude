@@ -34,7 +34,7 @@ export class UI {
       b.addEventListener('click', () => this.app.selectAndTarget(id));
       $('quickTargets').appendChild(b);
     }
-    for (const sel of ['measureA', 'measureB', 'surfTrack']) {
+    for (const sel of ['measureA', 'measureB', 'lookAtSel']) {
       for (const b of BODIES) {
         const o = document.createElement('option');
         o.value = b.id; o.textContent = b.name;
@@ -64,14 +64,40 @@ export class UI {
     $('btnStepFwd').addEventListener('click', () => this._step(1));
     $('btnStepBack').addEventListener('click', () => this._step(-1));
 
-    // camera
-    $('camMode').addEventListener('change', e => {
-      app.rig.setMode(e.target.value);
-      $('surfaceControls').classList.toggle('hidden', e.target.value !== 'surface');
+    // camera modes
+    const modeHints = {
+      orbit: 'drag = rotate · wheel/pinch = zoom · right-drag/2-finger = pan · double-tap a body = go there',
+      center: 'you are AT the target body, looking out · drag = look around · wheel/pinch = telescope zoom · "look at" keeps a body centered',
+      free: 'drag = look · wheel/pinch = move forward/back · WASD/QE fly, Shift = faster',
+    };
+    for (const [btn, mode] of [['modeOrbit', 'orbit'], ['modeCenter', 'center'], ['modeFree', 'free']]) {
+      $(btn).addEventListener('click', () => this.setMode(mode));
+    }
+    this.setMode = mode => {
+      app.rig.setMode(mode);
+      for (const [btn, m] of [['modeOrbit', 'orbit'], ['modeCenter', 'center'], ['modeFree', 'free']]) {
+        $(btn).classList.toggle('active', m === mode);
+      }
+      $('centerControls').classList.toggle('hidden', mode !== 'center');
+      $('modeHint').textContent = modeHints[mode];
+      if (mode === 'center') $('lookAtSel').value = app.rig.look.trackId || '';
+    };
+    $('lookAtSel').addEventListener('change', e => { app.rig.look.trackId = e.target.value || null; });
+
+    // mobile panel toggles
+    $('togLeft').addEventListener('click', () => {
+      $('leftpanel').classList.toggle('open');
+      $('rightpanel').classList.remove('open');
     });
-    $('surfLat').addEventListener('change', e => app.rig.surf.lat = clamp(+e.target.value || 0, -90, 90));
-    $('surfLon').addEventListener('change', e => app.rig.surf.lon = +e.target.value || 0);
-    $('surfTrack').addEventListener('change', e => { app.rig.surf.trackId = e.target.value || null; });
+    $('togRight').addEventListener('click', () => {
+      $('rightpanel').classList.toggle('open');
+      $('leftpanel').classList.remove('open');
+    });
+    // tapping the canvas dismisses slide-in panels
+    document.getElementById('view').addEventListener('pointerdown', () => {
+      $('leftpanel').classList.remove('open');
+      $('rightpanel').classList.remove('open');
+    });
 
     // search
     $('searchBox').addEventListener('input', e => this._search(e.target.value));
@@ -108,6 +134,7 @@ export class UI {
       });
       app.opts[key] = $(el).checked;
     }
+    $('btnClearTrace').addEventListener('click', () => app.sceneMgr.clearTrace());
     $('skyBrightness').addEventListener('input', e => app.opts.skyBrightness = +e.target.value);
     app.opts.skyBrightness = 1;
 
@@ -169,9 +196,8 @@ export class UI {
       }
       else if (e.key === 'g' || e.key === 'G') { $('tGridPlane').checked = !$('tGridPlane').checked; app.opts.gridEclPlane = $('tGridPlane').checked; }
       else if (e.key === 'c' || e.key === 'C') {
-        const m = app.rig.mode === 'orbit' ? 'surface' : 'orbit';
-        $('camMode').value = m; app.rig.setMode(m);
-        $('surfaceControls').classList.toggle('hidden', m !== 'surface');
+        const order = ['orbit', 'center', 'free'];
+        this.setMode(order[(order.indexOf(app.rig.mode) + 1) % order.length]);
       }
       else if (e.key === 't' || e.key === 'T') { $('tTrace').checked = !$('tTrace').checked; app.opts.trace = $('tTrace').checked; app.sceneMgr.clearTrace(); }
       else if (e.key === 'h' || e.key === 'H') $('help').classList.toggle('hidden');
@@ -278,20 +304,17 @@ export class UI {
           `— greatest at ${e.latitude?.toFixed(1)}°, ${e.longitude?.toFixed(1)}° (obsc ${(e.obscuration * 100 || 0).toFixed(0)}%)`,
           () => {
             const app = this.app;
-            app.selectAndTarget('earth');
+            app.selectAndTarget('sun');
+            app.rig.setTarget('earth', app.sceneMgr.entries);
+            app.rig.targetId = 'earth';
             // eclipse geometry only makes sense at true scale
             app.opts.sizeScale = 1;
             $('scaleTrue').checked = true;
             $('scaleValue').textContent = '×1';
-            app.rig.setMode('surface');
-            $('camMode').value = 'surface';
-            $('surfaceControls').classList.remove('hidden');
-            app.rig.surf.lat = e.latitude ?? 0;
-            app.rig.surf.lon = e.longitude ?? 0;
-            $('surfLat').value = (e.latitude ?? 0).toFixed(1);
-            $('surfLon').value = (e.longitude ?? 0).toFixed(1);
-            app.rig.surf.trackId = 'sun';
-            $('surfTrack').value = 'sun';
+            this.setMode('center');
+            app.rig.look.trackId = 'sun';
+            app.rig.look.fov = 3;
+            $('lookAtSel').value = 'sun';
             app.clock.paused = true;
             this._syncTimeButtons();
           });
@@ -353,18 +376,28 @@ export class UI {
     // status bar
     const sc = app.opts.sizeScale;
     $('statusScale').textContent = sc === 1 ? 'TRUE SCALE 1:1 (sizes & distances)' :
-      `VISIBILITY SCALE — body radii ×${Math.round(sc).toLocaleString('en-US')}, distances 1:1`;
+      `ENLARGED ×${Math.round(sc).toLocaleString('en-US')} — all bodies proportional, distances 1:1`;
+    const modeWord = { orbit: 'orbiting', center: 'viewing from', free: 'free roam near' };
     $('statusMode').textContent =
-      `${app.rig.mode === 'orbit' ? 'orbiting' : 'standing on'} ${BODY_BY_ID[app.rig.targetId].name}` +
+      `${modeWord[app.rig.mode]} ${BODY_BY_ID[app.rig.targetId].name}` +
       (app.nbody.active ? ' · N-BODY MODE' : ' · ephemeris') +
       (app.opts.lightTime ? ' · light-time ON' : '');
     const e = app.sceneMgr.entries[app.rig.targetId];
     if (e && app.rig.mode === 'orbit') {
       const kmPerPx = (app.rig.distU * KM_PER_UNIT * 2 * Math.tan(app.rig.camera.fov * DEG / 2)) / app.renderer.domElement.clientHeight;
       $('statusRef').textContent = `1 px ≈ ${fmtDistance(kmPerPx)} at target`;
-    } else if (app.rig.mode === 'surface') {
-      $('statusRef').textContent = `FOV ${app.rig.surf.fov.toFixed(1)}°`;
-      $('surfReadout').textContent = `alt ${app.rig.surf.altDeg.toFixed(1)}° az ${((app.rig.surf.headingDeg % 360) + 360).toFixed(1) % 360 || (((app.rig.surf.headingDeg % 360) + 360) % 360).toFixed(1)}° fov ${app.rig.surf.fov.toFixed(2)}°`;
+    } else if (app.rig.mode === 'center') {
+      $('statusRef').textContent = `FOV ${app.rig.look.fov.toFixed(2)}°`;
+      // look direction as RA/Dec
+      const y = app.rig.look.yawDeg * DEG, p = app.rig.look.pitchDeg * DEG;
+      const dirScene = [Math.cos(p) * Math.cos(y), Math.sin(p), Math.cos(p) * Math.sin(y)];
+      const dirEqj = eclToEqj([dirScene[0], -dirScene[2], dirScene[1]]);
+      const ra = ((Math.atan2(dirEqj[1], dirEqj[0]) / DEG / 15) + 24) % 24;
+      const dec = Math.asin(clamp(dirEqj[2], -1, 1)) / DEG;
+      $('viewReadout').textContent = `looking at RA ${ra.toFixed(2)}h / Dec ${dec.toFixed(1)}° · FOV ${app.rig.look.fov.toFixed(2)}°` +
+        (app.rig.look.trackId ? ` · tracking ${BODY_BY_ID[app.rig.look.trackId].name}` : '');
+    } else {
+      $('statusRef').textContent = 'wheel/pinch = move · WASD/QE fly · Shift = faster';
     }
     if (app.nbody.active) {
       $('nbodyDivergence').textContent = `Earth divergence: ${fmtDistance(app.nbody.divergenceKm(clock.ut))} after ${((clock.ut - app.nbody.startUt)).toFixed(1)} d`;

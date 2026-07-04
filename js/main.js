@@ -31,10 +31,7 @@ class App {
     this.selection = 'earth';
     this.ui.select('earth');
 
-    // start: visibility scale on for a friendly first view, orbiting Earth
-    const scaleVis = document.getElementById('scaleVis');
-    scaleVis.checked = true;
-    scaleVis.dispatchEvent(new Event('change'));
+    // start: enlarged bodies (×50, proportional) for a friendly first view
     this.rig.distU = 900;
     this._lastReal = performance.now();
     this._lastUiRefresh = 0;
@@ -52,6 +49,7 @@ class App {
   select(id) {
     this.selection = id;
     this.ui.select(id);
+    this.sceneMgr.setTraceColor(BODY_BY_ID[id].color);
   }
 
   selectAndTarget(id) {
@@ -137,8 +135,7 @@ class App {
     };
     for (const [el, key] of Object.entries(map)) $(el).checked = !!this.opts[key];
     $('skyBrightness').value = this.opts.skyBrightness ?? 1;
-    $('camMode').value = this.rig.mode;
-    $('surfaceControls').classList.toggle('hidden', this.rig.mode !== 'surface');
+    this.ui.setMode(this.rig.mode);
     if (this.opts.sizeScale === 1) $('scaleTrue').checked = true;
     else { $('scaleVis').checked = true; $('scaleSlider').value = Math.log10(this.opts.sizeScale); }
     $('scaleValue').textContent = '×' + Math.round(this.opts.sizeScale).toLocaleString('en-US');
@@ -179,10 +176,10 @@ class App {
       this.nbody.applyToSnapshot(snap);
     }
 
-    const focusKm = this.rig.update(snap, this.sceneMgr.entries);
+    const focusKm = this.rig.update(snap, this.sceneMgr.entries, dtReal);
     this.sceneMgr.update(snap, {
       focusKm, camera: this.rig.camera, sizeScale: this.opts.sizeScale,
-      surfaceBodyId: this.rig.mode === 'surface' ? this.rig.targetId : null,
+      centerBodyId: this.rig.mode === 'center' ? this.rig.targetId : null,
     }, this.opts, this.selection, this.eph);
 
     // apparent-path trace of the selected body from the current viewpoint

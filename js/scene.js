@@ -117,7 +117,7 @@ export class SceneManager {
 
   // ---------------- sky ----------------
   _buildSky() {
-    const tex = fileTexture('textures/starmap_4k.jpg');
+    const tex = fileTexture('textures/starmap_8k.jpg');
     tex.wrapS = THREE.RepeatWrapping;
     this.skyMat = makeSkyMaterial(tex);
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), this.skyMat);
@@ -136,7 +136,9 @@ export class SceneManager {
   _buildBelts() {
     const rng = mulberry(20260704);
     this.belts = [];
-    // Main asteroid belt with Kirkwood gaps
+    // Main asteroid belt with Kirkwood gaps. Deliberately dim: real
+    // asteroids are unresolvable specks — the belt should read as a faint
+    // statistical haze, not a highlighted feature.
     this.belts.push(makeBelt(this.scene, rng, 25000, () => {
       let a;
       for (;;) {
@@ -147,7 +149,7 @@ export class SceneManager {
         if (rng() < w) break;
       }
       return { a, e: rayleigh(rng, 0.09, 0.32), i: rayleigh(rng, 6, 28) };
-    }, '#8a7f72', '#5f574d', 0.85, 1.6));
+    }, '#6e675e', '#3f3a34', 0.28, 1.1));
     // Jupiter Trojans (L4 + L5 clouds, librating about ±60°)
     const lamJ0 = 34.35, nJ = 0.0830912;   // Jupiter mean longitude J2000 + rate (deg, deg/day)
     this.belts.push(makeBelt(this.scene, rng, 4200, (k) => {
@@ -155,7 +157,7 @@ export class SceneManager {
       const a = 5.2028 + gauss(rng) * 0.006;
       const lam = lamJ0 + (lead ? 60 : -60) + gauss(rng) * 13;
       return { a, e: rayleigh(rng, 0.045, 0.15), i: rayleigh(rng, 10, 32), lockLambda: lam, lockRate: nJ };
-    }, '#7a6f66', '#55493f', 0.8, 1.4));
+    }, '#63594f', '#3a332c', 0.26, 1.0));
     // Kuiper belt: plutinos + classical + scattered
     this.belts.push(makeBelt(this.scene, rng, 14000, () => {
       const u = rng();
@@ -163,7 +165,7 @@ export class SceneManager {
       if (u < 0.85) return { a: 42 + rng() * 5.5, e: rayleigh(rng, 0.055, 0.24), i: rng() < 0.6 ? rayleigh(rng, 2.2, 8) : rayleigh(rng, 13, 35) };
       const q = 32 + rng() * 8, ap = 48 + rng() * 45;
       return { a: ap, e: 1 - q / ap, i: rayleigh(rng, 15, 40) };
-    }, '#7d8794', '#4d5560', 0.75, 1.5));
+    }, '#5d6570', '#363c44', 0.24, 1.05));
   }
 
   // ---------------- grids ----------------
@@ -193,11 +195,13 @@ export class SceneManager {
     // grid vertices are in their native frame (pole = +Z); orient into scene:
     // v_scene = S · M_frame→ecl · v_frame,  S = ecl→scene = [[1,0,0],[0,0,1],[0,-1,0]]
     const S = [[1, 0, 0], [0, 0, 1], [0, -1, 0]];
-    this.gridEqSky = makeSkyGrid(0x3a5a3a, 0.5);
+    // equatorial grid: major lines every 30° with minor lines every 10°
+    // dec / 15° RA (1 hour), plus polar cross-hairs
+    this.gridEqSky = makeSkyGrid(0x3a5a3a, { decStep: 30, raStep: 30, opacity: 0.55, minorDecStep: 10, minorRaStep: 15, minorOpacity: 0.22 });
     const M_ECL_FROM_EQJ = M3.transpose(M_EQJ_FROM_ECL);
     this.gridEqSky.quaternion.setFromRotationMatrix(m3ToMatrix4(M3.mul(S, M_ECL_FROM_EQJ)));
     this.scene.add(this.gridEqSky);
-    this.gridEclSky = makeSkyGrid(0x4a4a2a, 0.45);
+    this.gridEclSky = makeSkyGrid(0x4a4a2a, { decStep: 30, raStep: 30, opacity: 0.45 });
     this.gridEclSky.quaternion.setFromRotationMatrix(m3ToMatrix4(S));
     this.scene.add(this.gridEclSky);
   }
@@ -299,6 +303,7 @@ export class SceneManager {
     this.traceDirs.push(dirScene.clone());
   }
   clearTrace() { this.traceDirs = []; }
+  setTraceColor(cssColor) { this.traceLine.material.color.set(cssColor); }
 
   // =====================================================================
   // per-frame update
@@ -313,7 +318,9 @@ export class SceneManager {
       scenePos[b.id] = sceneFromEclKm(snap.pos.get(b.id), focusKm);
     }
     const sunScene = scenePos.sun;
-    const sunRadiusUnits = BODY_BY_ID.sun.radiusKm / KM_PER_UNIT * (opts.scaleSunToo ? sizeScale : Math.min(sizeScale, 50));
+    // one uniform factor for every body (Sun included) so relative
+    // proportions are always preserved — Jupiter can never outgrow the Sun
+    const sunRadiusUnits = BODY_BY_ID.sun.radiusKm / KM_PER_UNIT * sizeScale;
 
     for (const b of BODIES) {
       const e = this.entries[b.id];
@@ -326,14 +333,18 @@ export class SceneManager {
       const m4 = new THREE.Matrix4().makeBasis(bx, bz, by.multiplyScalar(-1));
       e.mesh.quaternion.setFromRotationMatrix(m4);
 
-      const k = (b.type === 'star' && !opts.scaleSunToo) ? Math.min(sizeScale, 50) : sizeScale;
+      const k = sizeScale;
       const re = (b.equatorialRadiusKm || b.radiusKm) / KM_PER_UNIT * k;
       const rp = re * (1 - (b.flattening || 0));
       e.mesh.scale.set(re, rp, re);
       e.displayedRadius = re;
 
+      // hide the body the camera sits inside (center / "view from" mode)
+      const isCenterBody = view.centerBodyId === b.id;
+      e.mesh.visible = !isCenterBody;
+
       if (e.atmo) {
-        e.atmo.visible = !!opts.atmos;
+        e.atmo.visible = !!opts.atmos && !isCenterBody;
         e.atmo.quaternion.copy(e.mesh.quaternion);
         e.atmo.scale.set(re * 1.017, rp * 1.017, re * 1.017);
         e.atmo.material.uniforms.uSunPos.value.copy(sunScene);
@@ -401,10 +412,10 @@ export class SceneManager {
     for (const b of BODIES) {
       if (!b.parent) continue;
       const o = this.orbits[b.id];
-      // standing on a body: its own orbit (and its moons') pass through the
-      // camera and streak across the sky — hide them
-      const onSurfaceOf = view.surfaceBodyId;
-      const hide = onSurfaceOf && (b.id === onSurfaceOf || b.parent === onSurfaceOf);
+      // viewing from inside a body: its own orbit line passes through the
+      // camera and streaks across the sky — hide it (moons' orbits stay:
+      // they read as rings around the observer, which is informative)
+      const hide = view.centerBodyId && b.id === view.centerBodyId;
       o.line.visible = showOrb(b.type) && !hide;
       if (o.line.visible) o.line.position.copy(scenePos[b.parent]);
     }
@@ -641,27 +652,31 @@ function updateRingGeometryRatio(mesh, ratio) {
   geo.userData.ratio = ratio;
 }
 
-function makeSkyGrid(color, opacity) {
+function makeSkyGrid(color, cfg) {
   const group = new THREE.Group();
-  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
   // grid built in a frame where +Z is the pole; caller orients via quaternion
-  for (let decDeg = -60; decDeg <= 60; decDeg += 30) {
-    const pts = [];
-    const cd = Math.cos(decDeg * DEG), sd = Math.sin(decDeg * DEG);
-    for (let k = 0; k <= 120; k++) {
-      const ra = k / 120 * 2 * Math.PI;
-      pts.push(new THREE.Vector3(cd * Math.cos(ra), cd * Math.sin(ra), sd));
+  const addLines = (decStep, raStep, opacity) => {
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    for (let decDeg = -90 + decStep; decDeg <= 90 - decStep; decDeg += decStep) {
+      const pts = [];
+      const cd = Math.cos(decDeg * DEG), sd = Math.sin(decDeg * DEG);
+      for (let k = 0; k <= 144; k++) {
+        const ra = k / 144 * 2 * Math.PI;
+        pts.push(new THREE.Vector3(cd * Math.cos(ra), cd * Math.sin(ra), sd));
+      }
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
     }
-    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
-  }
-  for (let raDeg = 0; raDeg < 360; raDeg += 30) {
-    const pts = [];
-    for (let k = 0; k <= 60; k++) {
-      const dec = (-80 + k / 60 * 160) * DEG;
-      pts.push(new THREE.Vector3(Math.cos(dec) * Math.cos(raDeg * DEG), Math.cos(dec) * Math.sin(raDeg * DEG), Math.sin(dec)));
+    for (let raDeg = 0; raDeg < 360; raDeg += raStep) {
+      const pts = [];
+      for (let k = 0; k <= 72; k++) {
+        const dec = (-88 + k / 72 * 176) * DEG;
+        pts.push(new THREE.Vector3(Math.cos(dec) * Math.cos(raDeg * DEG), Math.cos(dec) * Math.sin(raDeg * DEG), Math.sin(dec)));
+      }
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
     }
-    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
-  }
+  };
+  if (cfg.minorDecStep) addLines(cfg.minorDecStep, cfg.minorRaStep, cfg.minorOpacity);
+  addLines(cfg.decStep, cfg.raStep, cfg.opacity);
   group.renderOrder = -50;
   return group;
 }

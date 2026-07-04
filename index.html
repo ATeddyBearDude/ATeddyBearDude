@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Solar System Simulator — ephemeris-accurate 3D</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='4' fill='%23ffcc55'/></svg>">
 <link rel="stylesheet" href="css/main.css">
@@ -23,63 +23,59 @@
   <div class="trow">
     <button id="btnRev" title="Reverse time direction [R]">◀◀</button>
     <button id="btnPlay" title="Play/Pause [Space]">❚❚</button>
-    <button id="btnSlower" title="Slower [-]">÷</button>
-    <button id="btnFaster" title="Faster [+]">×</button>
+    <button id="btnSlower" title="Slower [-]">slower</button>
+    <button id="btnFaster" title="Faster [+]">faster</button>
     <span id="rateLabel" class="mono" title="Simulation rate">1 s/s</span>
-    <button id="btnReal" title="Real-time rate">1×</button>
+    <button id="btnReal" title="Run at real-time rate">1×</button>
     <button id="btnNow" title="Jump to current real time">now</button>
+    <span class="sep"></span>
     <input id="dateInput" type="datetime-local" step="1" title="Set date/time (UTC)">
     <button id="btnSetDate">set</button>
     <span class="sep"></span>
     <input id="stepAmount" type="number" value="1" step="any" title="Step amount">
     <select id="stepUnit" title="Step unit"></select>
-    <button id="btnStepBack" title="Step backward">−step</button>
-    <button id="btnStepFwd" title="Step forward">+step</button>
+    <button id="btnStepBack" title="Step backward by the chosen amount">−step</button>
+    <button id="btnStepFwd" title="Step forward by the chosen amount">+step</button>
   </div>
 </div>
 
 <!-- ===================== left: view controls ===================== -->
-<div id="leftpanel" class="panel">
+<div id="leftpanel" class="panel side">
   <details open>
     <summary>Camera</summary>
-    <div class="row">
-      <label>mode</label>
-      <select id="camMode">
-        <option value="orbit">orbit target</option>
-        <option value="surface">stand on surface</option>
-      </select>
+    <div class="row modebtns">
+      <button id="modeOrbit" class="active" title="Orbit around the locked body — drag to rotate, wheel/pinch to zoom">orbit</button>
+      <button id="modeCenter" title="Look out from the body's center (planetarium view) — see the sky as that world sees it">from body</button>
+      <button id="modeFree" title="Fly anywhere — drag to look, wheel/pinch to move, WASD/QE + Shift to fly">free roam</button>
     </div>
+    <div class="dim" id="modeHint">drag = rotate · wheel/pinch = zoom · right-drag/2-finger = pan · double-tap a body = go there</div>
     <div class="row">
-      <label>target</label>
-      <input id="searchBox" type="text" placeholder="search / go to…" autocomplete="off">
+      <label>go to</label>
+      <input id="searchBox" type="text" placeholder="search any body…" autocomplete="off">
     </div>
     <div id="searchResults"></div>
     <div class="row quickrow" id="quickTargets"></div>
-    <div id="surfaceControls" class="hidden">
-      <div class="row">
-        <label>lat°</label><input id="surfLat" type="number" step="0.1" value="28.4">
-        <label>lon°</label><input id="surfLon" type="number" step="0.1" value="-80.6">
-      </div>
+    <div id="centerControls" class="hidden">
       <div class="row">
         <label>look at</label>
-        <select id="surfTrack"><option value="">— free look —</option></select>
+        <select id="lookAtSel" title="Keep this body centered on screen"><option value="">— free look —</option></select>
       </div>
-      <div class="row dim" id="surfReadout">alt — az — fov —</div>
+      <div class="row dim" id="viewReadout"></div>
     </div>
   </details>
 
   <details open>
     <summary>Scale</summary>
     <div class="row">
-      <label><input type="radio" name="scalemode" id="scaleTrue" checked> true 1:1</label>
-      <label><input type="radio" name="scalemode" id="scaleVis"> visibility</label>
+      <label><input type="radio" name="scalemode" id="scaleTrue"> true 1:1</label>
+      <label><input type="radio" name="scalemode" id="scaleVis" checked> enlarged</label>
     </div>
     <div class="row">
-      <label>body ×</label>
-      <input id="scaleSlider" type="range" min="0" max="4" step="0.01" value="2.5">
-      <span id="scaleValue" class="mono">×316</span>
+      <label>bodies ×</label>
+      <input id="scaleSlider" type="range" min="0" max="3" step="0.01" value="1.7">
+      <span id="scaleValue" class="mono">×50</span>
     </div>
-    <div class="dim" id="scaleNote">orbital distances always 1:1 — only body radii are exaggerated</div>
+    <div class="dim" id="scaleNote">all body radii scaled by the same factor (proportions preserved) — distances always 1:1</div>
   </details>
 
   <details open>
@@ -103,6 +99,10 @@
       <label><input type="checkbox" id="tTrace"> trace target path</label>
     </div>
     <div class="row">
+      <button id="btnClearTrace" title="Erase the recorded apparent path">clear trace</button>
+      <span class="dim">trace = apparent path of the selected body from your viewpoint</span>
+    </div>
+    <div class="row">
       <label>stars</label>
       <input id="skyBrightness" type="range" min="0" max="2" step="0.05" value="1">
     </div>
@@ -122,7 +122,7 @@
 </div>
 
 <!-- ===================== right: info + tools ===================== -->
-<div id="rightpanel" class="panel">
+<div id="rightpanel" class="panel side">
   <details open>
     <summary>Target: <span id="selName">—</span></summary>
     <table class="info" id="infoTable"></table>
@@ -150,7 +150,7 @@
   <details>
     <summary>Axis / rotation</summary>
     <table class="info" id="axisTable"></table>
-    <div class="dim">Pole + spin follow IAU/WGCCRE models (or tidal locking). Body axial tilt is applied to the rendered surface.</div>
+    <div class="dim">Pole + spin follow IAU/WGCCRE models (incl. axial precession) or tidal locking. Axial tilt is applied to the rendered surface.</div>
   </details>
 
   <details>
@@ -193,17 +193,23 @@
 
 <!-- ===================== bottom: status ===================== -->
 <div id="bottombar" class="panel">
-  <span id="statusScale">true scale 1:1</span>
+  <span id="statusScale">bodies ×50, distances 1:1</span>
   <span id="statusMode" class="dim"></span>
   <span id="statusRef" class="dim" title="scale reference at target distance"></span>
   <span id="statusFps" class="dim right"></span>
 </div>
 
+<!-- mobile panel toggles -->
+<button id="togLeft" class="paneltoggle" title="view controls">☰</button>
+<button id="togRight" class="paneltoggle" title="target info & tools">ⓘ</button>
+
 <div id="help" class="panel hidden">
   <b>Keys</b>: Space play/pause · R reverse · +/− speed · 0–9 quick targets ·
-  L labels · O orbits · G grids · C camera mode · T trace · H help<br>
-  <b>Mouse</b>: drag rotate/look · wheel zoom (orbit: distance, surface: FOV) ·
-  right-drag/shift-drag pan · click label select · double-click body → target
+  C cycle camera mode · WASD/QE+Shift fly (free roam) · L labels · O orbits ·
+  G grids · T trace · H help<br>
+  <b>Mouse/touch</b>: drag = rotate/look · wheel/pinch = zoom (orbit: distance,
+  from-body: FOV, free: move) · right-drag / shift-drag / 2-finger = pan ·
+  tap label = select · double-tap body = go there
 </div>
 <button id="btnHelp" title="help [H]">?</button>
 

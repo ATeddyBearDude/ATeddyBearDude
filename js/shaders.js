@@ -318,7 +318,7 @@ const beltVert = /* glsl */`
     vec4 mv = viewMatrix * vec4(scenePos, 1.0);
     gl_Position = projectionMatrix * mv;
     float dist = length(mv.xyz);
-    gl_PointSize = clamp(uSize * 55.0 / sqrt(max(dist, 0.1)), 0.7, 3.2);
+    gl_PointSize = clamp(uSize * 55.0 / sqrt(max(dist, 0.1)), 0.7, 2.4);
     vDepthFade = smoothstep(0.02, 0.6, dist);   // hide when extremely close
     #include <logdepthbuf_vertex>
   }
@@ -335,9 +335,11 @@ const beltFrag = /* glsl */`
   void main() {
     #include <logdepthbuf_fragment>
     vec2 c = gl_PointCoord - 0.5;
-    if (dot(c, c) > 0.25) discard;
+    float r2 = dot(c, c) * 4.0;
+    if (r2 > 1.0) discard;
     vec3 col = mix(uColorA, uColorB, vShade);
-    gl_FragColor = vec4(col, uOpacity * vDepthFade);
+    // soft-edged specks so the belt reads as haze, not highlighted dots
+    gl_FragColor = vec4(col, uOpacity * vDepthFade * smoothstep(1.0, 0.35, r2));
     #include <colorspace_fragment>
   }
 `;

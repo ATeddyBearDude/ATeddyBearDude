@@ -3,7 +3,11 @@
 A scientifically accurate, to-scale, real-time 3D solar system in the browser.
 No build step, no server-side code — static files + WebGL2.
 
-![validation](https://img.shields.io/badge/validation-14%2F14%20checks-brightgreen)
+![validation](https://img.shields.io/badge/validation-21%2F21%20checks-brightgreen)
+
+Works on desktop and Android/mobile browsers (WebGL2): one finger rotates/looks,
+two-finger pinch zooms, two-finger drag pans, ☰/ⓘ buttons open the control
+panels, double-tap a body to travel to it.
 
 ## Run it
 
@@ -68,6 +72,9 @@ These *emerge from geometry* — nothing is scripted — and are covered by
 | Moon distance range over a saros | 356 442 – 406 677 km |
 | Galilean sidereal periods (measured from the model) | match published values |
 | Exact reversibility (t → ±100 yr → t) | bit-identical positions |
+| Sidereal rotation: Earth 23.9347 h, Mars 24.6230 h, Jupiter 9.9249 h, Venus retrograde 243.02 d, Moon synchronous 27.32 d | measured numerically from the rendered orientation model |
+| Earth axial precession | pole declination 90.00° (2000 AD) → 57.5° (8500 AD) — the real 25.8-kyr circle |
+| Secular orbit evolution | Earth's eccentricity drifts 0.017074 → 0.017277 between 2000 and 2500 |
 
 Eclipse rendering is physical: every surface fragment computes the visible
 fraction of the Sun's disk against nearby occluding spheres
@@ -88,23 +95,29 @@ components (14 000).
 
 ### Scale
 
-- Default **true 1:1** for sizes *and* distances.
-- **Visibility scale** toggle exaggerates body radii only (×1–×10 000,
-  slider); orbital geometry always stays 1:1. The current mode and factor
-  are always shown in the status bar, plus a live "1 px ≈ X km" reference.
+- **True 1:1** for sizes *and* distances, or **enlarged** mode where every
+  body radius is multiplied by the *same* factor (×1–×1 000): relative
+  proportions are always preserved — Jupiter can never outgrow the Sun.
+  Orbital geometry always stays 1:1. The current mode and factor are shown
+  in the status bar, plus a live "1 px ≈ X km" reference.
 
 ### Camera
 
-- **Orbit mode**: lock onto any body; drag to rotate, wheel to zoom,
-  right-drag to pan; smooth focus transitions; double-click any body to
-  travel to it.
-- **Surface mode**: stand at any lat/lon on any body. The viewpoint rides
-  the body's true rotation; drag looks around (alt-az), wheel zooms FOV
-  down to 0.35° (telescope). "Look at" tracks any other body across the sky
-  — watch retrograde loops, eclipses, transits, phases and apparent-size
-  changes exactly as observed.
-- **Trace target path** draws the selected body's apparent path against the
-  stars from your current viewpoint (the classic retrograde-loop figure).
+- **Orbit mode**: lock onto any body (it stays centered); drag to rotate,
+  wheel/pinch to zoom, right-drag / two-finger drag to pan; smooth focus
+  transitions; double-click/double-tap any body to travel to it.
+- **From-body mode** (planetarium): view the sky from the *center* of any
+  body in an inertial frame — the body itself is hidden. "Look at" keeps any
+  other object centered as it moves; wheel/pinch zooms FOV down to 0.3°
+  (telescope). Watch retrograde loops, eclipses, transits, phases and
+  apparent-size changes exactly as observed from that world.
+- **Free roam**: fly anywhere — drag looks, wheel/pinch dollies (speed
+  scales with distance to the nearest body, so it's usable from planetary
+  close-ups to interplanetary hops), WASD/QE + Shift on a keyboard.
+- **Trace target path** (toggle + clear) draws the selected body's apparent
+  motion against the stars from your current viewpoint — lock onto Earth,
+  select Mars, run time at a few days/second and the classic retrograde
+  loop draws itself.
 
 ### Time
 
@@ -132,9 +145,20 @@ equatorial + ecliptic sky grids · full **save/load** of simulation state
 
 ### Sky
 
-NASA SVS Tycho star map (real stars + the Milky Way band) rendered in true
-equatorial orientation by direction-sampling in the shader — the galactic
-plane sits exactly where it belongs relative to the ecliptic.
+NASA SVS Tycho star map at **8k** (real stars + the Milky Way band) rendered
+in true equatorial orientation by direction-sampling in the shader — the
+galactic plane sits exactly where it belongs relative to the ecliptic, and
+planets appear against their real constellations (May 2018 puts Mars in
+Capricornus and Saturn by the galactic center in Sagittarius, as observed).
+
+### Rotation & precession
+
+Rotation states are the IAU/WGCCRE time-dependent models, so sidereal spin
+rates are measured-accurate (validated numerically — see the table above)
+and **Earth's 25.8-kyr axial precession is real**: run millennia forward and
+the celestial pole leaves Polaris and heads toward Vega. Planetary orbits
+likewise carry their VSOP87 secular evolution (node/perihelion drift,
+eccentricity change), and moon orbits precess from their parents' J2.
 
 ## Rendering & performance tradeoffs
 
@@ -153,8 +177,10 @@ plane sits exactly where it belongs relative to the ecliptic.
   noise: seamless, pole-artifact-free) for the outer-planet moons, Pluto and
   Charon with their known gross features (Iapetus dichotomy, Enceladus tiger
   stripes, Pluto's Sputnik Planitia…). Drop higher-res files into `textures/`
-  with the same names to upgrade. The 4k star map blurs at telescope FOVs —
-  swap in the 8k/16k NASA versions for sharper skies at the cost of load time.
+  with the same names to upgrade. The 8k star map (7 MB) still blurs at the
+  narrowest telescope FOVs — swap in NASA's 16k version for sharper skies at
+  the cost of load time. (GPUs that cap textures at 4k get an automatic
+  downscale from three.js.)
 - Planet/ring/atmosphere materials are hand-written GLSL (terminator with
   twilight softness, analytic extended-Sun occlusion, Earth night lights,
   ring translucency/backlighting).
@@ -170,12 +196,14 @@ plane sits exactly where it belongs relative to the ecliptic.
   similarly approximated from albedo rather than per-planet empirical fits.
 - The N-body mode is Newtonian point masses only (no relativity, no
   oblateness coupling) — that's why it's labelled as diverging.
-- Visibility-scale mode uses the *displayed* (inflated) radii for eclipse
+- Enlarged-scale mode uses the *displayed* (inflated) radii for eclipse
   shading and shadow cones so what you see stays self-consistent; switch to
-  true 1:1 scale for physically exact shadow geometry.
-- Topocentric parallax applies to the camera position (you stand on the
-  rotating surface); the info-panel RA/Dec is J2000 geometric direction from
-  the camera without atmospheric refraction.
+  true 1:1 scale for physically exact shadow geometry (event presets do this
+  automatically).
+- From-body views are geocentric (body center), so eclipse sightlines are
+  geocentric rather than topocentric; the info-panel RA/Dec is J2000
+  geometric direction from the camera without atmospheric refraction.
+  (`tests/validate.mjs` still checks the 2017 eclipse topocentrically.)
 
 ## Credits & licenses
 

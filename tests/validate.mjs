@@ -149,5 +149,35 @@ const ut = d => A.MakeTime(d).ut;
     sep < rSunAmin, `sep=${sep.toFixed(2)}′, sun radius=${rSunAmin.toFixed(2)}′`);
 }
 
+// ---------- 7. rotation rates (sidereal) + axial precession ----------
+{
+  // signed prime-meridian rotation rate about the body's own pole, rad/day
+  const rate = (id, t0) => {
+    const dtD = 0.01;
+    const a1 = eph.orientationOf(id, t0), a2 = eph.orientationOf(id, t0 + dtD);
+    const x1 = [a1[0][0], a1[1][0], a1[2][0]], x2 = [a2[0][0], a2[1][0], a2[2][0]];
+    const z = [a1[0][2], a1[1][2], a1[2][2]];
+    const cr = V.cross(x1, x2);
+    return Math.atan2(V.dot(cr, z), V.dot(x1, x2)) / dtD;
+  };
+  const t0 = ut(new Date(Date.UTC(2026, 0, 1)));
+  const periodH = id => 2 * Math.PI / Math.abs(rate(id, t0)) * 24;
+  check('Earth sidereal rotation ≈ 23.9345 h', Math.abs(periodH('earth') - 23.9345) < 0.01, periodH('earth').toFixed(4) + ' h');
+  check('Mars sidereal rotation ≈ 24.6230 h', Math.abs(periodH('mars') - 24.6230) < 0.02, periodH('mars').toFixed(4) + ' h');
+  check('Jupiter rotation (System III) ≈ 9.9250 h', Math.abs(periodH('jupiter') - 9.9250) < 0.01, periodH('jupiter').toFixed(4) + ' h');
+  check('Venus rotation retrograde, ≈ 243.02 d', rate('venus', t0) < 0 && Math.abs(periodH('venus') / 24 - 243.02) < 2, (periodH('venus') / 24).toFixed(2) + ' d');
+  check('Moon rotation synchronous ≈ 27.32 d', Math.abs(periodH('moon') / 24 - 27.32) < 0.3, (periodH('moon') / 24).toFixed(2) + ' d');
+  // Earth axial precession: pole traces the 25.8-kyr circle (Vega-ward)
+  const d1 = A.RotationAxis(A.Body.Earth, A.MakeTime(0)).dec;
+  const d2 = A.RotationAxis(A.Body.Earth, A.MakeTime(6500 * 365.25)).dec;
+  check('Earth axis precesses over millennia (pole leaves Polaris)', d1 > 89.9 && d2 < 70,
+    `pole dec 2000AD=${d1.toFixed(2)}° → 8500AD=${d2.toFixed(2)}°`);
+  // planetary orbits change over time (VSOP secular terms): Earth's e shrinks
+  const e1 = eph.osculatingElements('earth', 0).e;
+  const e2 = eph.osculatingElements('earth', 500 * 365.25).e;
+  check('orbital elements evolve with time (secular change present)', Math.abs(e2 - e1) > 1e-5,
+    `Earth e: ${e1.toFixed(6)} (2000) → ${e2.toFixed(6)} (2500)`);
+}
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);
