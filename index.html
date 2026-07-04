@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Olympiad Atlas — a star map of STEM competitions</title>
+</head>
+<body>
+<!-- ATLAS:BEGIN -->
+<style>
+  :root{
+    --ink:#e9edfb;
+    --ink-dim:#93a0c4;
+    --ink-faint:#5b6788;
+    --glass:rgba(255,255,255,.055);
+    --glass-strong:rgba(255,255,255,.09);
+    --glass-edge:rgba(255,255,255,.16);
+    --glass-edge-hi:rgba(255,255,255,.38);
+    --ground:#05070f;
+    --disp:"Avenir Next",Avenir,Futura,"Century Gothic","Trebuchet MS",ui-sans-serif,sans-serif;
+    --body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",ui-sans-serif,sans-serif;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+    --c-math:#7fa3ff; --c-phys:#b79cff; --c-astro:#e8c46a;
+    --c-chem:#5fc9a5; --c-bio:#84c96b;  --c-inf:#ff9d6b;
+    --c-earth:#c8a06e;--c-multi:#d78fd0;--c-res:#ef8aa2;
+  }
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--body); overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* ---------- sky ---------- */
+  #sky{position:fixed; inset:0; z-index:0;}
+  .nebula{position:fixed; z-index:0; border-radius:50%; filter:blur(90px); pointer-events:none; will-change:transform;}
+  #neb1{width:70vmax;height:52vmax;left:-18vmax;top:-16vmax;
+        background:radial-gradient(closest-side,rgba(38,54,138,.72),transparent 70%);}
+  #neb2{width:64vmax;height:60vmax;right:-22vmax;top:6vmax;
+        background:radial-gradient(closest-side,rgba(104,64,166,.58),transparent 70%);}
+  #neb3{width:58vmax;height:44vmax;left:14vmax;bottom:-24vmax;
+        background:radial-gradient(closest-side,rgba(24,108,108,.52),transparent 70%);}
+  #neb4{width:34vmax;height:30vmax;right:8vmax;bottom:-10vmax;
+        background:radial-gradient(closest-side,rgba(158,84,52,.32),transparent 70%);}
+  /* ---------- world ---------- */
+  #viewport{position:fixed; inset:0; z-index:1; overflow:hidden; cursor:grab; touch-action:none;}
+  #viewport.dragging{cursor:grabbing;}
+  #world{position:absolute; left:50%; top:50%; width:0; height:0;
+         transform-origin:0 0; will-change:transform;}
+  #lines{position:absolute; left:-3000px; top:-2600px; width:6000px; height:5200px;
+         overflow:visible; pointer-events:none;}
+  #lines line{stroke:rgba(255,255,255,.10); stroke-width:1; stroke-dasharray:2 7; vector-effect:non-scaling-stroke;}
+  .cluster-label{
+    position:absolute; transform:translate(-50%,-50%); pointer-events:none;
+    font-family:var(--disp); text-transform:uppercase; white-space:nowrap;
+    letter-spacing:.55em; text-indent:.55em; font-size:15px; font-weight:600;
+    color:rgba(233,237,251,.32); text-align:center;
+  }
+  .cluster-label small{
+    display:block; margin-top:8px; letter-spacing:.28em; text-indent:.28em;
+    font-family:var(--mono); font-size:9.5px; font-weight:400;
+    color:rgba(147,160,196,.42); text-transform:none;
+  }
+  /* ---------- cards ---------- */
+  .card{
+    position:absolute; transform:translate(-50%,-50%);
+    width:212px; padding:15px 17px 14px; text-align:left;
+    border-radius:18px; border:1px solid var(--glass-edge);
+    background:
+      radial-gradient(140px 90px at var(--mx,80%) var(--my,-20%), rgba(255,255,255,.13), transparent 60%),
+      linear-gradient(160deg, rgba(255,255,255,.10), rgba(255,255,255,.02) 42%, rgba(255,255,255,.06)),
+      var(--glass);
+    -webkit-backdrop-filter:blur(14px) saturate(1.35);
+    backdrop-filter:blur(14px) saturate(1.35);
+    box-shadow:
+      inset 0 1px 0 var(--glass-edge-hi),
+      inset 0 -1px 0 rgba(255,255,255,.06),
+      0 14px 34px rgba(2,4,12,.45);
+    color:var(--ink); font-family:var(--body); cursor:pointer;
+    transition:transform .28s cubic-bezier(.2,.9,.25,1.2), box-shadow .28s ease, border-color .28s ease;
+    opacity:0;
+  }
+  .card.landed{opacity:1;}
+  .card:hover, .card:focus-visible{
+    transform:translate(-50%,-50%) translateY(-4px) scale(1.03);
+    border-color:var(--glass-edge-hi);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.5),
+      inset 0 -1px 0 rgba(255,255,255,.08),
+      0 22px 48px rgba(2,4,12,.55),
+      0 0 0 1px rgba(255,255,255,.05),
+      0 0 26px -6px var(--acc);
+    z-index:5;
+  }
+  .card:focus-visible{outline:2px solid var(--acc); outline-offset:3px;}
+  .card .eyebrow{
+    display:flex; align-items:center; gap:7px;
+    font-family:var(--mono); font-size:9px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--ink-dim);
+  }
+  .card .eyebrow i{
+    width:7px;height:7px;border-radius:50%;background:var(--acc);flex:none;
+    box-shadow:0 0 8px 1px var(--acc);
+  }
+  .card h3{
+    margin:9px 0 3px; font-family:var(--disp); font-weight:600;
+    font-size:23px; letter-spacing:.06em; line-height:1.05; color:var(--ink);
+  }
+  .card p{margin:0; font-size:12px; line-height:1.42; color:var(--ink-dim);}
+  /* ---------- chrome (fixed UI) ---------- */
+  .glass-panel{
+    border:1px solid var(--glass-edge); background:var(--glass-strong);
+    -webkit-backdrop-filter:blur(20px) saturate(1.4);
+    backdrop-filter:blur(20px) saturate(1.4);
+    box-shadow:inset 0 1px 0 var(--glass-edge-hi), 0 12px 32px rgba(2,4,12,.45);
+  }
+  #masthead{
+    position:fixed; z-index:10; top:18px; left:18px;
+    padding:14px 20px 13px; border-radius:20px; max-width:min(430px, calc(100vw - 36px));
+  }
+  #masthead h1{
+    margin:0; font-family:var(--disp); font-weight:600; font-size:19px;
+    letter-spacing:.34em; text-indent:.02em; text-transform:uppercase;
+  }
+  #masthead h1 em{font-style:normal; color:var(--c-astro);}
+  #masthead p{
+    margin:5px 0 0; font-size:11.5px; color:var(--ink-dim); letter-spacing:.02em;
+  }
+  #hint{
+    position:fixed; z-index:10; top:22px; right:18px;
+    padding:8px 14px; border-radius:999px;
+    font-family:var(--mono); font-size:10px; letter-spacing:.14em;
+    color:var(--ink-dim); text-transform:uppercase;
+    transition:opacity 1s ease;
+  }
+  #hint.gone{opacity:0; pointer-events:none;}
+  #dock{
+    position:fixed; z-index:10; left:50%; bottom:16px; transform:translateX(-50%);
+    display:flex; gap:6px; padding:8px; border-radius:999px;
+    max-width:calc(100vw - 148px); overflow-x:auto; scrollbar-width:none;
+  }
+  #dock::-webkit-scrollbar{display:none;}
+  .chip{
+    flex:none; display:flex; align-items:center; gap:7px;
+    padding:8px 13px; border-radius:999px; border:1px solid transparent;
+    background:transparent; color:var(--ink-dim); cursor:pointer;
+    font-family:var(--disp); font-size:11px; font-weight:600;
+    letter-spacing:.12em; text-transform:uppercase; white-space:nowrap;
+    transition:background .2s ease, color .2s ease, border-color .2s ease;
+  }
+  .chip i{width:6px;height:6px;border-radius:50%;background:var(--acc);box-shadow:0 0 7px 1px var(--acc);flex:none;}
+  .chip:hover{background:rgba(255,255,255,.08); color:var(--ink);}
+  .chip.active{background:rgba(255,255,255,.12); color:var(--ink); border-color:var(--glass-edge);}
+  .chip:focus-visible{outline:2px solid var(--glass-edge-hi); outline-offset:2px;}
+  #controls{
+    position:fixed; z-index:10; right:16px; bottom:16px;
+    display:flex; flex-direction:column; border-radius:16px; overflow:hidden;
+  }
+  #controls button{
+    width:42px; height:40px; border:0; background:transparent; color:var(--ink);
+    font-size:17px; cursor:pointer; font-family:var(--body);
+    transition:background .2s ease;
+  }
+  #controls button + button{border-top:1px solid rgba(255,255,255,.09);}
+  #controls button:hover{background:rgba(255,255,255,.1);}
+  #controls button:focus-visible{outline:2px solid var(--glass-edge-hi); outline-offset:-3px;}
+  /* ---------- modal ---------- */
+  #overlay{
+    position:fixed; inset:0; z-index:20; display:none;
+    align-items:center; justify-content:center; padding:20px;
+    background:rgba(3,5,12,.45);
+    -webkit-backdrop-filter:blur(7px); backdrop-filter:blur(7px);
+    opacity:0; transition:opacity .3s ease;
+  }
+  #overlay.open{display:flex;}
+  #overlay.shown{opacity:1;}
+  #dossier{
+    position:relative; width:min(620px, 100%); max-height:min(78vh, 640px);
+    overflow-y:auto; border-radius:26px; padding:30px 34px 28px;
+    border:1px solid var(--glass-edge);
+    background:
+      radial-gradient(420px 240px at 85% -10%, color-mix(in srgb, var(--acc) 16%, transparent), transparent 70%),
+      linear-gradient(165deg, rgba(255,255,255,.12), rgba(255,255,255,.03) 45%, rgba(255,255,255,.07)),
+      rgba(10,14,28,.72);
+    -webkit-backdrop-filter:blur(26px) saturate(1.5);
+    backdrop-filter:blur(26px) saturate(1.5);
+    box-shadow:inset 0 1px 0 var(--glass-edge-hi), 0 30px 80px rgba(1,2,8,.7);
+    transform:translateY(16px) scale(.97);
+    transition:transform .34s cubic-bezier(.2,.9,.3,1.15);
+  }
+  #overlay.shown #dossier{transform:none;}
+  #dossier .eyebrow{
+    display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+    font-family:var(--mono); font-size:10px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--ink-dim);
+  }
+  #dossier .eyebrow i{width:8px;height:8px;border-radius:50%;background:var(--acc);box-shadow:0 0 9px 1px var(--acc);}
+  #dossier .est{
+    margin-left:auto; margin-right:42px; padding:4px 10px; border-radius:999px;
+    border:1px solid var(--glass-edge); letter-spacing:.18em; color:var(--ink);
+  }
+  #dossier h2{
+    margin:14px 0 2px; font-family:var(--disp); font-weight:600;
+    font-size:clamp(26px, 5vw, 34px); letter-spacing:.05em; line-height:1.05;
+    text-wrap:balance;
+  }
+  #dossier .fullname{margin:0 0 18px; font-size:14px; color:var(--ink-dim); letter-spacing:.02em;}
+  #dossier h4{
+    margin:20px 0 7px; font-family:var(--mono); font-size:10px; font-weight:500;
+    letter-spacing:.26em; text-transform:uppercase; color:var(--acc);
+  }
+  #dossier section p{margin:0; font-size:14px; line-height:1.62; color:var(--ink); max-width:60ch;}
+  #dossier .links{display:flex; gap:10px; flex-wrap:wrap; margin-top:24px;}
+  #dossier .links a{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:11px 18px; border-radius:999px; text-decoration:none;
+    font-family:var(--disp); font-size:12px; font-weight:600;
+    letter-spacing:.1em; text-transform:uppercase;
+    transition:transform .2s ease, background .2s ease, box-shadow .2s ease;
+  }
+  #dossier .links a.primary{
+    color:#0b0e1a; background:linear-gradient(160deg, color-mix(in srgb, var(--acc) 92%, white), var(--acc));
+    box-shadow:0 6px 22px -6px var(--acc);
+  }
+  #dossier .links a.secondary{
+    color:var(--ink); border:1px solid var(--glass-edge); background:rgba(255,255,255,.07);
+  }
+  #dossier .links a:hover{transform:translateY(-2px);}
+  #dossier .links a:focus-visible{outline:2px solid var(--glass-edge-hi); outline-offset:3px;}
+  #dossier .links a span{font-family:var(--body); font-weight:700;}
+  #closeBtn{
+    position:absolute; top:16px; right:16px; width:34px; height:34px;
+    border-radius:50%; border:1px solid var(--glass-edge);
+    background:rgba(255,255,255,.07); color:var(--ink); font-size:15px;
+    cursor:pointer; transition:background .2s ease;
+  }
+  #closeBtn:hover{background:rgba(255,255,255,.16);}
+  #closeBtn:focus-visible{outline:2px solid var(--glass-edge-hi); outline-offset:2px;}
+  @media (max-width:640px){
+    #masthead{padding:11px 15px;}
+    #masthead h1{font-size:15px;}
+    #masthead p{display:none;}
+    #hint{display:none;}
+    #dossier{padding:24px 22px;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition-duration:.01ms !important; animation:none !important;}
+  }
+</style>
+
+<canvas id="sky" aria-hidden="true"></canvas>
+<div class="nebula" id="neb1" aria-hidden="true"></div>
+<div class="nebula" id="neb2" aria-hidden="true"></div>
+<div class="nebula" id="neb3" aria-hidden="true"></div>
+<div class="nebula" id="neb4" aria-hidden="true"></div>
+
+<div id="viewport">
+  <div id="world">
+    <svg id="lines" viewBox="-3000 -2600 6000 5200" aria-hidden="true"></svg>
+  </div>
+</div>
+
+<header id="masthead" class="glass-panel">
+  <h1>Olympiad <em>Atlas</em></h1>
+  <p>A star map of the world's STEM competitions. Drag to roam the sky; every card opens a dossier with history, the official site, and past problems.</p>
+</header>
+
+<div id="hint" class="glass-panel">drag to roam · scroll to zoom · click a card</div>
+
+<nav id="dock" class="glass-panel" aria-label="Constellations"></nav>
+
+<div id="controls" class="glass-panel">
+  <button id="zin"  title="Zoom in"  aria-label="Zoom in">+</button>
+  <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+  <button id="zreset" title="Reset view" aria-label="Reset view">◎</button>
+</div>
+
+<div id="overlay" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+  <article id="dossier">
+    <button id="closeBtn" aria-label="Close">✕</button>
+    <div class="eyebrow"><i></i><span id="dCat"></span><span class="est" id="dEst"></span></div>
+    <h2 id="dTitle"></h2>
+    <p class="fullname" id="dFull"></p>
+    <section><h4>What it is</h4><p id="dAbout"></p></section>
+    <section><h4>A brief history</h4><p id="dHist"></p></section>
+    <div class="links">
+      <a class="primary" id="dSite" target="_blank" rel="noopener">Official website <span>↗</span></a>
+      <a class="secondary" id="dProbs" target="_blank" rel="noopener"><span>↗</span></a>
+    </div>
+  </article>
+</div>
+
+<script>
+"use strict";
+/* ================= data ================= */
+const CATS = {
+  phys:{name:"Physics",            color:"var(--c-phys)",  x:-380,  y:-40,   sub:"the origin field"},
+  astro:{name:"Astronomy & Astro­physics", color:"var(--c-astro)", x:430, y:90, sub:"charted at the origin"},
+  math:{name:"Mathematics",        color:"var(--c-math)",  x:-1380, y:-800,  sub:"the oldest constellation"},
+  inf:{name:"Informatics",         color:"var(--c-inf)",   x:1290,  y:-820,  sub:"algorithms & code"},
+  chem:{name:"Chemistry",          color:"var(--c-chem)",  x:-1600, y:430,   sub:"theory & lab practicals"},
+  bio:{name:"Biology",             color:"var(--c-bio)",   x:1560,  y:470,   sub:"from cells to ecosystems"},
+  earth:{name:"Earth Sciences",    color:"var(--c-earth)", x:-760,  y:1080,  sub:"one planet, two olympiads"},
+  res:{name:"Research & Engineering", color:"var(--c-res)", x:720,  y:1120,  sub:"projects, not papers"},
+  multi:{name:"Curiosities",       color:"var(--c-multi)", x:-30,   y:-1180, sub:"linguistics & young science"}
+};
+const COMPS = [
+/* ---- physics (center-west) ---- */
+{id:"ipho",cat:"phys",acr:"IPhO",name:"International Physics Olympiad",est:1967,
+ about:"The world championship of pre-university physics: five hours of theory and five of experiment, sat individually by five-student national teams from 80+ countries.",
+ hist:"Born in Warsaw in 1967 among five Eastern-bloc nations, it survived the Cold War, went truly global in the 1990s, and its problems — from neutron stars to soap films — now set the standard for olympiad physics everywhere.",
+ site:"https://www.ipho-new.org/",probs:"https://ipho-unofficial.org/timeline/",probsLabel:"Past problems"},
+{id:"eupho",cat:"phys",acr:"EuPhO",name:"European Physics Olympiad",est:2017,
+ about:"A deliberately harder, shorter-format European contest: three open-ended theory problems in five hours, with minimal hand-holding — closer to how physicists actually work.",
+ hist:"Founded in Tartu, Estonia in 2017 by Jaan Kalda and colleagues who felt IPhO problems had become too scaffolded. Its 'no subquestions' philosophy quickly earned it a cult following well beyond Europe.",
+ site:"https://eupho.ee/",probs:"https://eupho.ee/archive/",probsLabel:"Past problems"},
+{id:"iypt",cat:"phys",acr:"IYPT",name:"International Young Physicists' Tournament",est:1988,
+ about:"The 'Physics World Cup': teams spend months researching seventeen open problems — dancing droplets, singing wine glasses — then defend their findings in staged scientific debates called Physics Fights.",
+ hist:"Started in Moscow in 1988 as an outgrowth of a Soviet correspondence tournament, it went international in the early 1990s and remains the rare olympiad judged on research and argument rather than a written exam.",
+ site:"https://www.iypt.org/",probs:"https://www.iypt.org/problems/",probsLabel:"Problem archive"},
+{id:"usapho",cat:"phys",acr:"USAPhO",name:"F=ma Exam & USA Physics Olympiad",est:1986,
+ about:"The American pipeline to IPhO: the multiple-choice F=ma exam on mechanics feeds the free-response USAPhO, which selects the twenty-student U.S. Physics Team training camp.",
+ hist:"AAPT and AIP founded the U.S. Physics Team in 1986 to enter the IPhO. The mechanics-only F=ma screen, added in 2007, has become a rite of passage for American physics students in its own right.",
+ site:"https://www.aapt.org/physicsteam/",probs:"https://www.aapt.org/physicsteam/pastexams.cfm",probsLabel:"Past exams"},
+{id:"bpho",cat:"phys",acr:"BPhO",name:"British Physics Olympiad",est:1979,
+ about:"The UK's ladder of physics challenges, from school-level papers to Round 2, which selects the British team for IPhO — famous for long, meaty, estimation-heavy problems.",
+ hist:"With roots going back to 1979 and a permanent home at Oxford, the BPhO has grown into a family of a dozen competitions sat by tens of thousands of UK students each year.",
+ site:"https://www.bpho.org.uk/",probs:"https://www.bpho.org.uk/Papers/R1/",probsLabel:"Past papers"},
+{id:"pcup",cat:"phys",acr:"Physics Cup",name:"Physics Cup — TalTech",est:2012,
+ about:"A months-long online tournament of research-grade problems, one at a time. Solvers race for speed bonuses; full solutions demand genuine ingenuity, not just technique.",
+ hist:"Created in 2012 by Estonian physicist Jaan Kalda, whose handouts are already olympiad folklore. Its hardest problems have gone unsolved by hundreds of the world's best students for weeks at a stretch.",
+ site:"https://physicscup.ee/",probs:"https://physicscup.ee/",probsLabel:"Problem archive"},
+{id:"opho",cat:"phys",acr:"OPhO",name:"Online Physics Olympiad",est:2020,
+ about:"A student-run, fully online competition with an open round for teams worldwide and a brutal invitational final — no borders, no travel, just hard physics.",
+ hist:"Launched in 2020 by olympiad alumni when the pandemic cancelled in-person contests, it outlived the lockdowns and now draws thousands of competitors from dozens of countries every year.",
+ site:"https://physoly.tech/",probs:"https://physoly.tech/",probsLabel:"Past rounds"},
+/* ---- astronomy (center-east) ---- */
+{id:"ioaa",cat:"astro",acr:"IOAA",name:"International Olympiad on Astronomy & Astrophysics",est:2007,
+ about:"The premier world contest for high-school astrophysics: theory, data analysis, and a night-sky observation round with real telescopes — clouds permitting.",
+ hist:"First held in Chiang Mai, Thailand in 2007 after splitting off from the older astronomy olympiad tradition, the IOAA has grown to 50+ countries and is now the main international target for national astronomy programs.",
+ site:"https://ioaastrophysics.org/",probs:"https://ioaastrophysics.org/resources/problems-from-past-ioaa",probsLabel:"Past problems"},
+{id:"iao",cat:"astro",acr:"IAO",name:"International Astronomy Olympiad",est:1996,
+ about:"The original international astronomy contest for students aged 14–18, with theoretical, observational, and practical rounds and a deliberately scientific-culture, low-pressure ethos.",
+ hist:"Founded in 1996 by the Euro-Asian Astronomical Society under astronomer Michael Gavrilov, it ran from observatory towns like Nizhny Arkhyz and inspired the later, larger IOAA.",
+ site:"http://www.issp.ac.ru/iao/",probs:"http://www.issp.ac.ru/iao/",probsLabel:"Problem archive"},
+{id:"usaaao",cat:"astro",acr:"USAAAO",name:"USA Astronomy & Astrophysics Olympiad",est:2013,
+ about:"The American selection contest for IOAA: an open first round and an invitational national round covering everything from celestial mechanics to cosmology.",
+ hist:"Organized by volunteers and alumni since 2013, it gave the U.S. its first IOAA teams and has grown alongside the boom in high-school astrophysics interest.",
+ site:"https://usaaao.org/",probs:"https://usaaao.org/resources/",probsLabel:"Past exams"},
+{id:"baao",cat:"astro",acr:"BAAO",name:"British Astronomy & Astrophysics Olympiad",est:2015,
+ about:"The UK's national astro olympiad, run within the BPhO family, selecting the British IOAA team with problems spanning orbital dynamics, stellar physics, and practical sky work.",
+ hist:"Created in 2015 as UK interest in IOAA grew, it borrowed the BPhO's problem-setting culture and quickly established itself as the standard route into astrophysics for British students.",
+ site:"https://www.bpho.org.uk/baao/",probs:"https://www.bpho.org.uk/baao/Papers/R1/",probsLabel:"Past papers"},
+/* ---- mathematics (NW) ---- */
+{id:"imo",cat:"math",acr:"IMO",name:"International Mathematical Olympiad",est:1959,
+ about:"The oldest and most prestigious of all science olympiads: six problems, nine hours, and over a hundred countries chasing gold. A single perfect score can make a mathematician's early reputation.",
+ hist:"First held in Romania in 1959 with seven socialist countries, the IMO became the template every other olympiad copied. Fields Medalists from Perelman to Tao first surfaced on its leaderboards.",
+ site:"https://www.imo-official.org/",probs:"https://www.imo-official.org/problems.aspx",probsLabel:"Past problems"},
+{id:"putnam",cat:"math",acr:"Putnam",name:"William Lowell Putnam Competition",est:1938,
+ about:"North America's legendary undergraduate contest: twelve problems in six hours, scored out of 120, with a median that has famously hovered near zero or single digits.",
+ hist:"Endowed in 1938 in memory of William Lowell Putnam, it has been administered by the MAA ever since. Putnam Fellows include Feynman, Milnor, and a startling share of future Fields Medalists.",
+ site:"https://maa.org/putnam/",probs:"https://kskedlaya.org/putnam-archive/",probsLabel:"Problem archive"},
+{id:"egmo",cat:"math",acr:"EGMO",name:"European Girls' Mathematical Olympiad",est:2012,
+ about:"An IMO-format olympiad for teams of young women, created to widen the pipeline into top-level mathematics — European in name but global in participation.",
+ hist:"First held in Cambridge in 2012 with 19 countries, EGMO has more than tripled in size and measurably increased female participation in national olympiad programs worldwide.",
+ site:"https://www.egmo.org/",probs:"https://www.egmo.org/egmos/",probsLabel:"Past problems"},
+{id:"amc",cat:"math",acr:"AMC",name:"AMC → AIME → USAMO series",est:1950,
+ about:"America's mathematical funnel: hundreds of thousands sit the AMC 10/12, the top scorers advance to the AIME, and the best of those reach the USAMO proof olympiad and IMO team selection.",
+ hist:"Begun in 1950 as a New York high-school exam, the series grew into the largest math competition ecosystem on Earth and the model for national pipelines everywhere.",
+ site:"https://maa.org/student-programs/amc/",probs:"https://artofproblemsolving.com/wiki/index.php/AMC_Problems_and_Solutions",probsLabel:"Problem archive"},
+{id:"hmmt",cat:"math",acr:"HMMT",name:"Harvard–MIT Mathematics Tournament",est:1998,
+ about:"The flagship student-run tournament: individual and team rounds plus the chaotic 'Guts' relay, twice a year, drawing the strongest high-school competitors in North America and beyond.",
+ hist:"Founded in 1998 by Harvard and MIT students, HMMT is still organized entirely by undergraduates — many of them former contestants — and its February edition rivals national olympiads in difficulty.",
+ site:"https://www.hmmt.org/",probs:"https://www.hmmt.org/www/archive/problems",probsLabel:"Problem archive"},
+{id:"imc",cat:"math",acr:"IMC",name:"International Mathematics Competition for University Students",est:1994,
+ about:"The IMO's university-level sibling: two days of analysis, algebra, and combinatorics for undergraduates, hosted each summer in Blagoevgrad, Bulgaria.",
+ hist:"Founded in 1994 at University College London by John Jayne, the IMC has run every year since, and its alumni populate mathematics faculties across Europe and beyond.",
+ site:"https://www.imc-math.org.uk/",probs:"https://www.imc-math.org.uk/?act=problems",probsLabel:"Past problems"},
+{id:"bmo",cat:"math",acr:"BMO",name:"British Mathematical Olympiad",est:1965,
+ about:"The UK's national olympiad in two rounds of full-proof problems, sitting atop the Senior Mathematical Challenge and feeding the British IMO team.",
+ hist:"First set in 1965, the BMO is one of the oldest national olympiads still running, now organized by the UK Mathematics Trust with a problem style prized for elegance over machinery.",
+ site:"https://bmos.ukmt.org.uk/",probs:"https://bmos.ukmt.org.uk/",probsLabel:"Past papers"},
+/* ---- informatics (NE) ---- */
+{id:"ioi",cat:"inf",acr:"IOI",name:"International Olympiad in Informatics",est:1989,
+ about:"The world's top algorithmic programming contest for secondary students: two five-hour sessions of three problems each, scored automatically against hidden test data.",
+ hist:"Proposed at UNESCO and first held in Pravetz, Bulgaria in 1989, the IOI grew with the personal computer itself. Its medalists seeded the founding engineering teams of half the modern software industry.",
+ site:"https://ioinformatics.org/",probs:"https://ioinformatics.org/page/contests/10",probsLabel:"Past tasks"},
+{id:"icpc",cat:"inf",acr:"ICPC",name:"International Collegiate Programming Contest",est:1977,
+ about:"The oldest and largest programming contest for universities: teams of three share one computer for five hours against a dozen problems, where penalty minutes decide championships.",
+ hist:"Grown from a 1970 Texas contest into a world final first held in 1977, the ICPC now spans tens of thousands of teams across 100+ countries, with a finals dominated in recent decades by Russian, Chinese, and Polish universities.",
+ site:"https://icpc.global/",probs:"https://icpc.global/worldfinals/problems",probsLabel:"World finals problems"},
+{id:"usaco",cat:"inf",acr:"USACO",name:"USA Computing Olympiad",est:1992,
+ about:"America's informatics ladder: four online contests a year across Bronze to Platinum divisions, famous for its barnyard-themed problems and self-serve training pipeline.",
+ hist:"Founded in 1992 and long stewarded by Rob Kolstad and Brian Dean, USACO turned a niche selection exam into an open training ecosystem used by students far beyond the United States.",
+ site:"https://usaco.org/",probs:"https://usaco.org/index.php?page=contests",probsLabel:"Past contests"},
+{id:"egoi",cat:"inf",acr:"EGOI",name:"European Girls' Olympiad in Informatics",est:2021,
+ about:"An IOI-style contest for teams of young women, mirroring EGMO's mission in computer science, with two competition days of algorithmic problems.",
+ hist:"First hosted in Zurich in 2021 after years of underrepresentation debates in the IOI community, EGOI expanded immediately and now draws teams from well outside Europe.",
+ site:"https://egoi.org/",probs:"https://egoi.org/",probsLabel:"Past tasks"},
+/* ---- chemistry (W) ---- */
+{id:"icho",cat:"chem",acr:"IChO",name:"International Chemistry Olympiad",est:1968,
+ about:"The world chemistry championship: a five-hour theoretical exam and a five-hour laboratory practical, spanning everything from quantum chemistry to titration technique.",
+ hist:"First held in Prague in 1968 — weeks before the Soviet invasion — with just three countries, the IChO endured and expanded to 80+ nations, its lab round making it uniquely logistics-heavy among olympiads.",
+ site:"https://www.ichosc.org/",probs:"https://www.icho-official.org/",probsLabel:"Past exams"},
+{id:"usnco",cat:"chem",acr:"USNCO",name:"U.S. National Chemistry Olympiad",est:1984,
+ about:"The American Chemical Society's national contest: local exams feed a national round of multiple choice, free response, and lab practical, selecting the U.S. IChO study camp.",
+ hist:"Launched by the ACS in 1984 after the U.S. joined IChO, the program now reaches roughly 16,000 students a year through ACS local sections.",
+ site:"https://www.acs.org/education/olympiad.html",probs:"https://www.acs.org/education/olympiad/prepare-for-exams.html",probsLabel:"Past exams"},
+{id:"ukcho",cat:"chem",acr:"UK ChO",name:"UK Chemistry Olympiad",est:1968,
+ about:"The Royal Society of Chemistry's flagship schools competition: a notoriously stretching Round 1 paper sat in school, then a residential Round 2 that picks the UK IChO team.",
+ hist:"Running for over five decades under the RSC, its Round 1 papers — full of real research chemistry dressed for sixth-formers — have become a staple of UK chemistry teaching.",
+ site:"https://edu.rsc.org/enrichment/uk-chemistry-olympiad",probs:"https://edu.rsc.org/enrichment/uk-chemistry-olympiad",probsLabel:"Past papers"},
+/* ---- biology (E) ---- */
+{id:"ibo",cat:"bio",acr:"IBO",name:"International Biology Olympiad",est:1990,
+ about:"The top secondary-school biology contest: demanding theory papers plus four laboratory practicals covering molecular biology, physiology, systematics, and ethology.",
+ hist:"Founded in 1990 in Olomouc, Czechoslovakia by six countries, the IBO now spans 70+ nations and has steadily shifted its emphasis from memorized fact to experimental reasoning.",
+ site:"https://www.ibo-info.org/",probs:"https://www.ibo-info.org/en/info/papers.html",probsLabel:"Past exams"},
+{id:"usabo",cat:"bio",acr:"USABO",name:"USA Biolympiad",est:2002,
+ about:"America's biology olympiad: open and semifinal exams lead to a two-week national finals boot camp where the four-student U.S. IBO team is forged.",
+ hist:"Established in 2002 by the Center for Excellence in Education, USABO turned U.S. participation in IBO from an afterthought into a run of podium finishes.",
+ site:"https://www.usabo-trc.org/",probs:"https://www.usabo-trc.org/",probsLabel:"Past exams"},
+{id:"bbo",cat:"bio",acr:"BBO",name:"British Biology Olympiad",est:1995,
+ about:"The UK's national biology competition, open to sixth-formers worldwide, with two online papers ranging across the whole of biology and selecting the UK IBO team.",
+ hist:"First run in 1995 and now organised under UK Biology Competitions with the Royal Society of Biology, it draws over ten thousand entrants a year from hundreds of schools.",
+ site:"https://ukbiologycompetitions.org/",probs:"https://ukbiologycompetitions.org/bbo/",probsLabel:"Past papers"},
+/* ---- earth (SW) ---- */
+{id:"ieso",cat:"earth",acr:"IESO",name:"International Earth Science Olympiad",est:2007,
+ about:"The olympiad of the whole planet: geology, meteorology, oceanography, and astronomy, tested in written exams, field investigations, and cooperative international team projects.",
+ hist:"First held in South Korea in 2007 under the International Geoscience Education Organisation, IESO is unusual for mixing national teams together in its field events — collaboration as part of the contest.",
+ site:"https://www.ieso-info.org/",probs:"https://www.ieso-info.org/",probsLabel:"Past papers"},
+{id:"igeo",cat:"earth",acr:"iGeo",name:"International Geography Olympiad",est:1996,
+ about:"The world contest for geography's best students: a written response test, a multimedia round, and a two-day fieldwork exercise mapping and analyzing a real landscape.",
+ hist:"Started in The Hague in 1996 with five countries under the International Geographical Union, iGeo now draws over forty national teams and alternates continents each year.",
+ site:"http://www.geoolympiad.org/",probs:"https://geoolympiad.org/document-library/",probsLabel:"Past tests"},
+/* ---- curiosities (N) ---- */
+{id:"iol",cat:"multi",acr:"IOL",name:"International Linguistics Olympiad",est:2003,
+ about:"Puzzle-solving over real languages you've never seen: decipher Ainu number systems or Yoruba grammar from a handful of examples, using pure logic — no prior linguistics required.",
+ hist:"Founded in Bulgaria in 2003, heir to a Moscow tradition of linguistics olympiads dating to 1965, the IOL has become the beloved 'secret olympiad' of mathematically-minded students.",
+ site:"https://ioling.org/",probs:"https://ioling.org/problems/",probsLabel:"Problem archive"},
+{id:"ijso",cat:"multi",acr:"IJSO",name:"International Junior Science Olympiad",est:2004,
+ about:"The all-of-science olympiad for students fifteen and under: physics, chemistry, and biology tested together in theory, multiple-choice, and team practical rounds.",
+ hist:"First held in Jakarta in 2004, IJSO gives many future IPhO and IChO medalists their first taste of international competition — the scouting league of the olympiad world.",
+ site:"https://www.ijsoweb.org/",probs:"https://www.ijsoweb.org/",probsLabel:"Past papers"},
+{id:"eoes",cat:"multi",acr:"EOES",name:"European Olympiad of Experimental Science",est:2003,
+ about:"A purely experimental team olympiad: three-student teams tackle integrated lab tasks that weave biology, chemistry, and physics into a single day-long investigation.",
+ hist:"Founded in 2003 as EUSO by Irish physicist Michael Cotter and relaunched as EOES in 2019, it fills the niche the theory-heavy olympiads leave open: science done with your hands.",
+ site:"https://eoes.science/",probs:"https://eoes.science/",probsLabel:"Past tasks"},
+/* ---- research & engineering (SE) ---- */
+{id:"isef",cat:"res",acr:"ISEF",name:"Regeneron International Science & Engineering Fair",est:1950,
+ about:"The world's largest pre-college research competition: ~1,800 finalists who won their way through regional fairs present original projects for over $9 million in awards.",
+ hist:"Founded in 1950 by Science Service, sponsored over the decades by Intel and now Regeneron, ISEF finalists have gone on to Nobel Prizes, Fields Medals, and a large share of Silicon Valley.",
+ site:"https://www.societyforscience.org/isef/",probs:"https://abstracts.societyforscience.org/",probsLabel:"Project abstracts"},
+{id:"sts",cat:"res",acr:"STS",name:"Regeneron Science Talent Search",est:1942,
+ about:"America's oldest and most prestigious science research competition for high-school seniors, culminating in forty finalists defending original research in Washington, D.C.",
+ hist:"Launched as the Westinghouse Science Talent Search in 1942, its alumni include thirteen Nobel laureates — a strike rate no other student competition on Earth can match.",
+ site:"https://www.societyforscience.org/regeneron-sts/",probs:"https://www.societyforscience.org/regeneron-sts/",probsLabel:"Alumni & archive"},
+{id:"frc",cat:"res",acr:"FRC",name:"FIRST Robotics Competition",est:1992,
+ about:"Varsity robotics: teams get a fresh game each January and six weeks to design, build, and program a 120-pound robot, then compete in alliance-based tournaments to a world championship.",
+ hist:"Founded by inventor Dean Kamen in a New Hampshire gym in 1992 to make engineering as celebrated as sport, FIRST now reaches hundreds of thousands of students across its program ladder.",
+ site:"https://www.firstinspires.org/robotics/frc",probs:"https://www.firstinspires.org/robotics/frc/game-and-season",probsLabel:"Season archive"},
+{id:"igem",cat:"res",acr:"iGEM",name:"iGEM Synthetic Biology Competition",est:2004,
+ about:"Teams engineer living systems from a kit of standardized biological parts — projects from biosensors to bio-manufacturing — and present them at an annual Grand Jamboree.",
+ hist:"Begun as an MIT January course in 2003–04, iGEM effectively created the field of synthetic biology's talent pipeline; its parts registry and team wikis are a public archive of two decades of student bioengineering.",
+ site:"https://igem.org/",probs:"https://competition.igem.org/",probsLabel:"Past competitions"},
+];
+
+/* ================= layout ================= */
+const GOLD = 2.399963229728653;
+const positions = {};
+(function place(){
+  const byCat = {};
+  COMPS.forEach(c => (byCat[c.cat] ??= []).push(c));
+  for (const [cat, list] of Object.entries(byCat)){
+    const C = CATS[cat];
+    const seed = [...cat].reduce((a,ch)=>a+ch.charCodeAt(0), 0);
+    list.forEach((c,i)=>{
+      const r = i===0 ? 0 : 150 + 102*Math.sqrt(i);
+      const a = seed + i*GOLD;
+      positions[c.id] = {
+        x: C.x + Math.cos(a)*r*1.18,
+        y: C.y + 118 + Math.sin(a)*r*0.86   /* pushed below the label */
+      };
+    });
+  }
+})();
+
+/* ================= build world ================= */
+const world = document.getElementById("world");
+const linesSvg = document.getElementById("lines");
+const frag = document.createDocumentFragment();
+
+for (const [cat, C] of Object.entries(CATS)){
+  const lab = document.createElement("div");
+  lab.className = "cluster-label";
+  lab.style.left = C.x+"px"; lab.style.top = (C.y-14)+"px";
+  lab.innerHTML = `${C.name}<small>${C.sub}</small>`;
+  frag.appendChild(lab);
+}
+COMPS.forEach(c=>{
+  const p = positions[c.id];
+  const el = document.createElement("button");
+  el.className = "card"; el.type = "button";
+  el.style.left = p.x+"px"; el.style.top = p.y+"px";
+  el.style.setProperty("--acc", CATS[c.cat].color);
+  el.dataset.id = c.id;
+  el.innerHTML =
+    `<span class="eyebrow"><i></i>${CATS[c.cat].name.replace("­","")}</span>`+
+    `<h3>${c.acr}</h3><p>${c.name}</p>`;
+  el.addEventListener("click", ()=> openDossier(c.id));
+  el.addEventListener("pointermove", e=>{
+    const r = el.getBoundingClientRect();
+    el.style.setProperty("--mx", ((e.clientX-r.left)/r.width*100)+"%");
+    el.style.setProperty("--my", ((e.clientY-r.top)/r.height*100)+"%");
+  });
+  frag.appendChild(el);
+});
+world.appendChild(frag);
+
+/* constellation lines: chain cards within each cluster */
+(function drawLines(){
+  const byCat = {};
+  COMPS.forEach(c => (byCat[c.cat] ??= []).push(positions[c.id]));
+  let svg = "";
+  for (const pts of Object.values(byCat)){
+    for (let i=1;i<pts.length;i++){
+      svg += `<line x1="${pts[i-1].x}" y1="${pts[i-1].y}" x2="${pts[i].x}" y2="${pts[i].y}"/>`;
+    }
+  }
+  linesSvg.innerHTML = svg;
+})();
+
+/* ================= pan / zoom ================= */
+const vp = document.getElementById("viewport");
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const HOME = {x:-15, y:-40, s: innerWidth < 700 ? 0.42 : 0.68};
+let cam = {...HOME};             /* world coords at screen center + scale */
+let vel = {x:0, y:0};
+let flying = null;
+
+function apply(){
+  world.style.transform = `scale(${cam.s}) translate(${-cam.x}px, ${-cam.y}px)`;
+  const px = -cam.x*cam.s, py = -cam.y*cam.s;
+  document.getElementById("neb1").style.transform = `translate(${px*0.018}px, ${py*0.018}px)`;
+  document.getElementById("neb2").style.transform = `translate(${px*0.028}px, ${py*0.028}px)`;
+  document.getElementById("neb3").style.transform = `translate(${px*0.022}px, ${py*0.022}px)`;
+  document.getElementById("neb4").style.transform = `translate(${px*0.034}px, ${py*0.034}px)`;
+}
+function clampCam(){
+  cam.x = Math.max(-2400, Math.min(2400, cam.x));
+  cam.y = Math.max(-2100, Math.min(2100, cam.y));
+  cam.s = Math.max(0.28, Math.min(1.7, cam.s));
+}
+
+let drag = null;
+vp.addEventListener("pointerdown", e=>{
+  if (e.target.closest(".card")) return;
+  flying = null;
+  drag = {px:e.clientX, py:e.clientY, moved:false, t:performance.now()};
+  vel = {x:0,y:0};
+  vp.setPointerCapture(e.pointerId);
+  vp.classList.add("dragging");
+});
+vp.addEventListener("pointermove", e=>{
+  if (!drag) return;
+  const dx = e.clientX - drag.px, dy = e.clientY - drag.py;
+  if (Math.abs(dx)+Math.abs(dy) > 3) { drag.moved = true; dismissHint(); }
+  const now = performance.now(), dt = Math.max(1, now - drag.t);
+  vel = {x: dx/dt*16, y: dy/dt*16};
+  drag.px = e.clientX; drag.py = e.clientY; drag.t = now;
+  cam.x -= dx/cam.s; cam.y -= dy/cam.s;
+  clampCam(); apply();
+});
+function endDrag(){
+  if (!drag) return;
+  drag = null;
+  vp.classList.remove("dragging");
+  if (!REDUCED) inertia();
+}
+vp.addEventListener("pointerup", endDrag);
+vp.addEventListener("pointercancel", endDrag);
+
+function inertia(){
+  if (drag || flying) return;
+  vel.x *= 0.92; vel.y *= 0.92;
+  if (Math.hypot(vel.x, vel.y) < 0.3) return;
+  cam.x -= vel.x/cam.s; cam.y -= vel.y/cam.s;
+  clampCam(); apply();
+  requestAnimationFrame(inertia);
+}
+
+vp.addEventListener("wheel", e=>{
+  e.preventDefault(); dismissHint();
+  const k = Math.exp(-e.deltaY * 0.0016);
+  zoomAt(e.clientX, e.clientY, cam.s * k);
+}, {passive:false});
+
+function zoomAt(sx, sy, ns){
+  ns = Math.max(0.28, Math.min(1.7, ns));
+  /* keep the world point under (sx,sy) fixed */
+  const cx = innerWidth/2, cy = innerHeight/2;
+  const wx = cam.x + (sx-cx)/cam.s, wy = cam.y + (sy-cy)/cam.s;
+  cam.s = ns;
+  cam.x = wx - (sx-cx)/cam.s;
+  cam.y = wy - (sy-cy)/cam.s;
+  clampCam(); apply();
+}
+
+function flyTo(x, y, s, ms=950){
+  const from = {...cam}, t0 = performance.now();
+  if (REDUCED){ cam = {x,y,s}; clampCam(); apply(); return; }
+  const token = flying = {};
+  (function step(){
+    if (flying !== token) return;
+    const t = Math.min(1, (performance.now()-t0)/ms);
+    const e = t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+    cam.x = from.x + (x-from.x)*e;
+    cam.y = from.y + (y-from.y)*e;
+    cam.s = from.s + (s-from.s)*e;
+    apply();
+    if (t<1) requestAnimationFrame(step); else flying = null;
+  })();
+}
+
+document.getElementById("zin").onclick  = ()=> zoomAt(innerWidth/2, innerHeight/2, cam.s*1.25);
+document.getElementById("zout").onclick = ()=> zoomAt(innerWidth/2, innerHeight/2, cam.s/1.25);
+document.getElementById("zreset").onclick = ()=>{ setActiveChip(null); flyTo(HOME.x, HOME.y, HOME.s); };
+
+addEventListener("keydown", e=>{
+  if (overlay.classList.contains("open")){
+    if (e.key === "Escape") closeDossier();
+    return;
+  }
+  const step = 90/cam.s;
+  if (e.key==="ArrowLeft"){cam.x-=step;} else if (e.key==="ArrowRight"){cam.x+=step;}
+  else if (e.key==="ArrowUp"){cam.y-=step;} else if (e.key==="ArrowDown"){cam.y+=step;}
+  else if (e.key==="+"||e.key==="="){zoomAt(innerWidth/2,innerHeight/2,cam.s*1.15); return;}
+  else if (e.key==="-"){zoomAt(innerWidth/2,innerHeight/2,cam.s/1.15); return;}
+  else return;
+  clampCam(); apply();
+});
+addEventListener("resize", apply);
+
+/* ================= dock ================= */
+const dock = document.getElementById("dock");
+let activeChip = null;
+for (const [cat, C] of Object.entries(CATS)){
+  const b = document.createElement("button");
+  b.className = "chip"; b.type = "button";
+  b.style.setProperty("--acc", C.color);
+  b.innerHTML = `<i></i>${C.name.replace("­","")}`;
+  b.onclick = ()=>{ setActiveChip(b); dismissHint(); flyTo(C.x, C.y+140, 0.82); };
+  dock.appendChild(b);
+}
+function setActiveChip(b){
+  activeChip?.classList.remove("active");
+  activeChip = b; b?.classList.add("active");
+}
+
+/* ================= dossier modal ================= */
+const overlay = document.getElementById("overlay");
+let lastFocus = null;
+function openDossier(id){
+  const c = COMPS.find(x=>x.id===id), C = CATS[c.cat];
+  lastFocus = document.activeElement;
+  document.getElementById("dossier").style.setProperty("--acc", C.color);
+  document.getElementById("dCat").textContent = C.name.replace("­","");
+  document.getElementById("dEst").textContent = "est. " + c.est;
+  document.getElementById("dTitle").textContent = c.acr;
+  document.getElementById("dFull").textContent = c.name;
+  document.getElementById("dAbout").textContent = c.about;
+  document.getElementById("dHist").textContent = c.hist;
+  document.getElementById("dSite").href = c.site;
+  const p = document.getElementById("dProbs");
+  p.href = c.probs;
+  p.innerHTML = `${c.probsLabel || "Past problems"} <span>↗</span>`;
+  overlay.classList.add("open");
+  requestAnimationFrame(()=> overlay.classList.add("shown"));
+  document.getElementById("closeBtn").focus();
+}
+function closeDossier(){
+  overlay.classList.remove("shown");
+  setTimeout(()=> overlay.classList.remove("open"), REDUCED ? 0 : 280);
+  lastFocus?.focus();
+}
+document.getElementById("closeBtn").onclick = closeDossier;
+overlay.addEventListener("click", e=>{ if (e.target === overlay) closeDossier(); });
+
+/* ================= hint ================= */
+let hintGone = false;
+function dismissHint(){
+  if (hintGone) return; hintGone = true;
+  document.getElementById("hint").classList.add("gone");
+}
+setTimeout(dismissHint, 9000);
+
+/* ================= starfield ================= */
+const sky = document.getElementById("sky");
+const ctx = sky.getContext("2d");
+let stars = [];
+function seedStars(){
+  sky.width = innerWidth * devicePixelRatio;
+  sky.height = innerHeight * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  const n = Math.round(innerWidth*innerHeight/6200);
+  stars = Array.from({length:n}, ()=>({
+    x:Math.random()*innerWidth*1.4 - innerWidth*0.2,
+    y:Math.random()*innerHeight*1.4 - innerHeight*0.2,
+    r:Math.random()<0.88 ? Math.random()*0.9+0.3 : Math.random()*1.5+1,
+    layer:Math.random()<0.6 ? 0.02 : 0.05,
+    tw:Math.random()*Math.PI*2,
+    ts:0.4+Math.random()*1.4
+  }));
+}
+seedStars();
+addEventListener("resize", seedStars);
+
+let meteor = null, nextMeteor = performance.now() + 4500;
+function drawSky(now){
+  ctx.clearRect(0,0,innerWidth,innerHeight);
+  const ox = -cam.x*cam.s, oy = -cam.y*cam.s;
+  for (const st of stars){
+    const a = REDUCED ? 0.75 : 0.55 + 0.45*Math.sin(st.tw + now/1000*st.ts);
+    ctx.globalAlpha = Math.max(0.12, a) * (st.layer>0.03 ? 0.95 : 0.6);
+    ctx.fillStyle = "#dfe6ff";
+    let x = (st.x + ox*st.layer) % (innerWidth*1.4), y = (st.y + oy*st.layer) % (innerHeight*1.4);
+    if (x < -innerWidth*0.2) x += innerWidth*1.4;
+    if (y < -innerHeight*0.2) y += innerHeight*1.4;
+    ctx.beginPath(); ctx.arc(x, y, st.r, 0, 7); ctx.fill();
+  }
+  /* occasional meteor */
+  if (!REDUCED){
+    if (!meteor && now > nextMeteor){
+      const fromLeft = Math.random()<0.5;
+      meteor = {x: fromLeft? -60 : innerWidth+60, y: Math.random()*innerHeight*0.45,
+                vx:(fromLeft?1:-1)*(7+Math.random()*5), vy:2.2+Math.random()*2, life:1};
+      nextMeteor = now + 6000 + Math.random()*9000;
+    }
+    if (meteor){
+      meteor.x += meteor.vx; meteor.y += meteor.vy; meteor.life -= 0.011;
+      const tail = 14;
+      const grad = ctx.createLinearGradient(meteor.x, meteor.y,
+        meteor.x - meteor.vx*tail, meteor.y - meteor.vy*tail);
+      grad.addColorStop(0, `rgba(230,238,255,${0.85*meteor.life})`);
+      grad.addColorStop(1, "rgba(230,238,255,0)");
+      ctx.strokeStyle = grad; ctx.lineWidth = 1.6; ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.moveTo(meteor.x, meteor.y);
+      ctx.lineTo(meteor.x - meteor.vx*tail, meteor.y - meteor.vy*tail);
+      ctx.stroke();
+      if (meteor.life <= 0 || meteor.x < -220 || meteor.x > innerWidth+220 || meteor.y > innerHeight+120) meteor = null;
+    }
+  }
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(drawSky);
+}
+requestAnimationFrame(drawSky);
+
+/* ================= arrival ================= */
+apply();
+const cards = [...document.querySelectorAll(".card")];
+/* nearest to viewport center land first */
+cards
+  .map(el=>({el, d: Math.hypot(parseFloat(el.style.left)-HOME.x, parseFloat(el.style.top)-HOME.y)}))
+  .sort((a,b)=>a.d-b.d)
+  .forEach((c,i)=> setTimeout(()=> c.el.classList.add("landed"), REDUCED ? 0 : 120 + i*36));
+if (!REDUCED){
+  const s0 = HOME.s*0.86;
+  cam.s = s0; apply();
+  flyTo(HOME.x, HOME.y, HOME.s, 1400);
+}
+</script>
+<!-- ATLAS:END -->
+</body>
+</html>
