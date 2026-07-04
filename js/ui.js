@@ -279,6 +279,10 @@ export class UI {
           () => {
             const app = this.app;
             app.selectAndTarget('earth');
+            // eclipse geometry only makes sense at true scale
+            app.opts.sizeScale = 1;
+            $('scaleTrue').checked = true;
+            $('scaleValue').textContent = '×1';
             app.rig.setMode('surface');
             $('camMode').value = 'surface';
             $('surfaceControls').classList.remove('hidden');
