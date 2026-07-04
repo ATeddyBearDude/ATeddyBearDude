@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solar System Simulator — ephemeris-accurate 3D</title>
+<link rel="stylesheet" href="css/main.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="overlay"></div>
+
+<!-- ===================== top: time ===================== -->
+<div id="topbar" class="panel">
+  <div class="trow">
+    <span id="simDate" class="bigdate" title="Simulated date/time (UTC)">—</span>
+    <span id="simJD" class="dim" title="Julian Date">JD —</span>
+  </div>
+  <div class="trow">
+    <button id="btnRev" title="Reverse time direction [R]">◀◀</button>
+    <button id="btnPlay" title="Play/Pause [Space]">❚❚</button>
+    <button id="btnSlower" title="Slower [-]">÷</button>
+    <button id="btnFaster" title="Faster [+]">×</button>
+    <span id="rateLabel" class="mono" title="Simulation rate">1 s/s</span>
+    <button id="btnReal" title="Real-time rate">1×</button>
+    <button id="btnNow" title="Jump to current real time">now</button>
+    <input id="dateInput" type="datetime-local" step="1" title="Set date/time (UTC)">
+    <button id="btnSetDate">set</button>
+    <span class="sep"></span>
+    <input id="stepAmount" type="number" value="1" step="any" title="Step amount">
+    <select id="stepUnit" title="Step unit"></select>
+    <button id="btnStepBack" title="Step backward">−step</button>
+    <button id="btnStepFwd" title="Step forward">+step</button>
+  </div>
+</div>
+
+<!-- ===================== left: view controls ===================== -->
+<div id="leftpanel" class="panel">
+  <details open>
+    <summary>Camera</summary>
+    <div class="row">
+      <label>mode</label>
+      <select id="camMode">
+        <option value="orbit">orbit target</option>
+        <option value="surface">stand on surface</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>target</label>
+      <input id="searchBox" type="text" placeholder="search / go to…" autocomplete="off">
+    </div>
+    <div id="searchResults"></div>
+    <div class="row quickrow" id="quickTargets"></div>
+    <div id="surfaceControls" class="hidden">
+      <div class="row">
+        <label>lat°</label><input id="surfLat" type="number" step="0.1" value="28.4">
+        <label>lon°</label><input id="surfLon" type="number" step="0.1" value="-80.6">
+      </div>
+      <div class="row">
+        <label>look at</label>
+        <select id="surfTrack"><option value="">— free look —</option></select>
+      </div>
+      <div class="row dim" id="surfReadout">alt — az — fov —</div>
+    </div>
+  </details>
+
+  <details open>
+    <summary>Scale</summary>
+    <div class="row">
+      <label><input type="radio" name="scalemode" id="scaleTrue" checked> true 1:1</label>
+      <label><input type="radio" name="scalemode" id="scaleVis"> visibility</label>
+    </div>
+    <div class="row">
+      <label>body ×</label>
+      <input id="scaleSlider" type="range" min="0" max="4" step="0.01" value="2.5">
+      <span id="scaleValue" class="mono">×316</span>
+    </div>
+    <div class="dim" id="scaleNote">orbital distances always 1:1 — only body radii are exaggerated</div>
+  </details>
+
+  <details open>
+    <summary>Display</summary>
+    <div class="togglegrid" id="toggles">
+      <label><input type="checkbox" id="tLabels" checked> labels</label>
+      <label><input type="checkbox" id="tMarkers" checked> markers</label>
+      <label><input type="checkbox" id="tOrbP" checked> planet orbits</label>
+      <label><input type="checkbox" id="tOrbM" checked> moon orbits</label>
+      <label><input type="checkbox" id="tOrbD" checked> dwarf orbits</label>
+      <label><input type="checkbox" id="tBelts" checked> belts</label>
+      <label><input type="checkbox" id="tRings" checked> rings</label>
+      <label><input type="checkbox" id="tAtmos" checked> atmospheres</label>
+      <label><input type="checkbox" id="tEclipse" checked> eclipse shadows</label>
+      <label><input type="checkbox" id="tGridPlane"> ecliptic grid</label>
+      <label><input type="checkbox" id="tGridEq"> equatorial sky grid</label>
+      <label><input type="checkbox" id="tGridEcl"> ecliptic sky grid</label>
+      <label><input type="checkbox" id="tCones"> shadow cones</label>
+      <label><input type="checkbox" id="tLagrange"> Lagrange points</label>
+      <label><input type="checkbox" id="tLightTime"> light-time delay</label>
+      <label><input type="checkbox" id="tTrace"> trace target path</label>
+    </div>
+    <div class="row">
+      <label>stars</label>
+      <input id="skyBrightness" type="range" min="0" max="2" step="0.05" value="1">
+    </div>
+  </details>
+
+  <details>
+    <summary>Physics</summary>
+    <div class="row">
+      <label><input type="radio" name="physmode" id="physEphem" checked> analytic ephemeris</label>
+    </div>
+    <div class="row">
+      <label><input type="radio" name="physmode" id="physNbody"> N-body integration</label>
+    </div>
+    <div class="dim">N-body: Newtonian point masses (Sun, planets, Moon, Pluto, dwarfs). Diverges from ephemeris over time:</div>
+    <div class="row dim mono" id="nbodyDivergence">—</div>
+  </details>
+</div>
+
+<!-- ===================== right: info + tools ===================== -->
+<div id="rightpanel" class="panel">
+  <details open>
+    <summary>Target: <span id="selName">—</span></summary>
+    <table class="info" id="infoTable"></table>
+  </details>
+
+  <details>
+    <summary>Orbital elements <span class="dim">(editable)</span></summary>
+    <div class="dim" id="elemNote">osculating, J2000 ecliptic, about parent</div>
+    <table class="elems">
+      <tr><td>a</td><td><input id="elA" type="number" step="any"> km</td></tr>
+      <tr><td>e</td><td><input id="elE" type="number" step="any" min="0" max="0.99"></td></tr>
+      <tr><td>i</td><td><input id="elI" type="number" step="any"> °</td></tr>
+      <tr><td>Ω</td><td><input id="elNode" type="number" step="any"> °</td></tr>
+      <tr><td>ω</td><td><input id="elPeri" type="number" step="any"> °</td></tr>
+      <tr><td>M₀</td><td><input id="elM" type="number" step="any"> °</td></tr>
+    </table>
+    <div class="row">
+      <button id="btnApplyElems">apply → Kepler mode</button>
+      <button id="btnResetElems">reset to real</button>
+    </div>
+    <div class="dim" id="elemStatus"></div>
+    <div class="row"><button id="btnResetAll">reset ALL bodies to real values</button></div>
+  </details>
+
+  <details>
+    <summary>Axis / rotation</summary>
+    <table class="info" id="axisTable"></table>
+    <div class="dim">Pole + spin follow IAU/WGCCRE models (or tidal locking). Body axial tilt is applied to the rendered surface.</div>
+  </details>
+
+  <details>
+    <summary>Events</summary>
+    <div class="row quickrow">
+      <button class="evbtn" data-ev="solar">☀ solar eclipse</button>
+      <button class="evbtn" data-ev="lunar">☾ lunar eclipse</button>
+      <button class="evbtn" data-ev="transit-mercury">Mercury transit</button>
+      <button class="evbtn" data-ev="transit-venus">Venus transit</button>
+      <button class="evbtn" data-ev="opposition">opposition (target)</button>
+      <button class="evbtn" data-ev="newmoon">new moon</button>
+      <button class="evbtn" data-ev="fullmoon">full moon</button>
+    </div>
+    <div class="dim">searches forward from current sim time</div>
+    <div id="eventResult" class="evresult"></div>
+  </details>
+
+  <details>
+    <summary>Measure</summary>
+    <div class="row">
+      <label>A</label><select id="measureA"></select>
+      <label>B</label><select id="measureB"></select>
+    </div>
+    <table class="info" id="measureTable"></table>
+  </details>
+
+  <details>
+    <summary>State</summary>
+    <div class="row">
+      <button id="btnSave">save file</button>
+      <button id="btnLoad">load file</button>
+      <input id="fileInput" type="file" accept=".json" class="hidden">
+    </div>
+    <div class="row">
+      <button id="btnSaveLocal">quick-save</button>
+      <button id="btnLoadLocal">quick-load</button>
+    </div>
+  </details>
+</div>
+
+<!-- ===================== bottom: status ===================== -->
+<div id="bottombar" class="panel">
+  <span id="statusScale">true scale 1:1</span>
+  <span id="statusMode" class="dim"></span>
+  <span id="statusRef" class="dim" title="scale reference at target distance"></span>
+  <span id="statusFps" class="dim right"></span>
+</div>
+
+<div id="help" class="panel hidden">
+  <b>Keys</b>: Space play/pause · R reverse · +/− speed · 0–9 quick targets ·
+  L labels · O orbits · G grids · C camera mode · T trace · H help<br>
+  <b>Mouse</b>: drag rotate/look · wheel zoom (orbit: distance, surface: FOV) ·
+  right-drag/shift-drag pan · click label select · double-click body → target
+</div>
+<button id="btnHelp" title="help [H]">?</button>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
