@@ -32,8 +32,9 @@ class App {
     this.ui.select('earth');
 
     // start: visibility scale on for a friendly first view, orbiting Earth
-    document.getElementById('scaleVis').checked = true;
-    this.opts.sizeScale = Math.pow(10, 2.5);
+    const scaleVis = document.getElementById('scaleVis');
+    scaleVis.checked = true;
+    scaleVis.dispatchEvent(new Event('change'));
     this.rig.distU = 900;
     this._lastReal = performance.now();
     this._lastUiRefresh = 0;
@@ -179,8 +180,10 @@ class App {
     }
 
     const focusKm = this.rig.update(snap, this.sceneMgr.entries);
-    this.sceneMgr.update(snap, { focusKm, camera: this.rig.camera, sizeScale: this.opts.sizeScale },
-      this.opts, this.selection, this.eph);
+    this.sceneMgr.update(snap, {
+      focusKm, camera: this.rig.camera, sizeScale: this.opts.sizeScale,
+      surfaceBodyId: this.rig.mode === 'surface' ? this.rig.targetId : null,
+    }, this.opts, this.selection, this.eph);
 
     // apparent-path trace of the selected body from the current viewpoint
     if (this.opts.trace && this.selection) {

@@ -401,7 +401,11 @@ export class SceneManager {
     for (const b of BODIES) {
       if (!b.parent) continue;
       const o = this.orbits[b.id];
-      o.line.visible = showOrb(b.type);
+      // standing on a body: its own orbit (and its moons') pass through the
+      // camera and streak across the sky — hide them
+      const onSurfaceOf = view.surfaceBodyId;
+      const hide = onSurfaceOf && (b.id === onSurfaceOf || b.parent === onSurfaceOf);
+      o.line.visible = showOrb(b.type) && !hide;
       if (o.line.visible) o.line.position.copy(scenePos[b.parent]);
     }
     if (eph) this.refreshOrbits(eph, snap.ut);
