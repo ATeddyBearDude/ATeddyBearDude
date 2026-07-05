@@ -27,14 +27,33 @@ export class UI {
       if (u.id === 'days') o.selected = true;
       $('stepUnit').appendChild(o);
     }
-    const quick = ['sun', 'mercury', 'venus', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto'];
-    for (const id of quick) {
-      const b = document.createElement('button');
-      b.textContent = BODY_BY_ID[id].name;
-      b.addEventListener('click', () => this.app.selectAndTarget(id));
-      $('quickTargets').appendChild(b);
-    }
-    for (const sel of ['measureA', 'measureB', 'lookAtSel']) {
+    // body button grids: sun + planets + dwarfs first, then moons (dimmer)
+    const majors = BODIES.filter(b => b.type !== 'moon').map(b => b.id);
+    const moons = BODIES.filter(b => b.type === 'moon').map(b => b.id);
+    const gridOrder = [...majors, ...moons];
+    const mkGrid = (container, onPick, extra = null) => {
+      const btns = new Map();
+      if (extra) {
+        const fb = document.createElement('button');
+        fb.textContent = extra.label;
+        fb.addEventListener('click', () => onPick(null));
+        container.appendChild(fb);
+        btns.set(null, fb);
+      }
+      for (const id of gridOrder) {
+        const b = document.createElement('button');
+        b.textContent = BODY_BY_ID[id].name;
+        if (BODY_BY_ID[id].type === 'moon') b.classList.add('moonb');
+        b.addEventListener('click', () => onPick(id));
+        container.appendChild(b);
+        btns.set(id, b);
+      }
+      return btns;
+    };
+    this._gotoBtns = mkGrid($('quickTargets'), id => this.app.selectAndTarget(id));
+    this._lookBtns = mkGrid($('lookAtGrid'), id => this.setLookAt(id), { label: 'free look' });
+
+    for (const sel of ['measureA', 'measureB']) {
       for (const b of BODIES) {
         const o = document.createElement('option');
         o.value = b.id; o.textContent = b.name;
@@ -61,8 +80,26 @@ export class UI {
       clock.setDate(new Date(v + 'Z'));
       app.onTimeJump();
     });
-    $('btnStepFwd').addEventListener('click', () => this._step(1));
-    $('btnStepBack').addEventListener('click', () => this._step(-1));
+    // step buttons: click steps once; press-and-hold repeats rapidly
+    const bindStep = (btn, sign) => {
+      let holdT = null, repT = null, held = false;
+      const start = e => {
+        e.preventDefault();
+        held = false;
+        this._step(sign);
+        holdT = setTimeout(() => {
+          held = true;
+          repT = setInterval(() => this._step(sign), 90);
+        }, 420);
+      };
+      const stop = () => { clearTimeout(holdT); clearInterval(repT); holdT = repT = null; };
+      btn.addEventListener('pointerdown', start);
+      for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(ev, stop);
+      window.addEventListener('blur', stop);
+      btn.addEventListener('click', e => { if (held) e.preventDefault(); });
+    };
+    bindStep($('btnStepFwd'), 1);
+    bindStep($('btnStepBack'), -1);
 
     // camera modes
     const modeHints = {
@@ -80,9 +117,13 @@ export class UI {
       }
       $('centerControls').classList.toggle('hidden', mode !== 'center');
       $('modeHint').textContent = modeHints[mode];
-      if (mode === 'center') $('lookAtSel').value = app.rig.look.trackId || '';
+      if (mode === 'center') this.setLookAt(app.rig.look.trackId || null);
     };
-    $('lookAtSel').addEventListener('change', e => { app.rig.look.trackId = e.target.value || null; });
+    // hard-lock the view onto a body (from-body mode); null = free look
+    this.setLookAt = id => {
+      app.rig.look.trackId = id;
+      if (this._lookBtns) for (const [bid, btn] of this._lookBtns) btn.classList.toggle('active', bid === id);
+    };
 
     // mobile panel toggles
     $('togLeft').addEventListener('click', () => {
@@ -97,15 +138,6 @@ export class UI {
     document.getElementById('view').addEventListener('pointerdown', () => {
       $('leftpanel').classList.remove('open');
       $('rightpanel').classList.remove('open');
-    });
-
-    // search
-    $('searchBox').addEventListener('input', e => this._search(e.target.value));
-    $('searchBox').addEventListener('keydown', e => {
-      if (e.key === 'Enter') {
-        const hit = $('searchResults').querySelector('.hit');
-        if (hit) { this.app.selectAndTarget(hit.dataset.id); this._search(''); e.target.value = ''; }
-      }
     });
 
     // scale
@@ -218,21 +250,6 @@ export class UI {
     this.app.onTimeJump();
   }
 
-  _search(q) {
-    const box = $('searchResults');
-    box.innerHTML = '';
-    if (!q) return;
-    const hits = BODIES.filter(b => b.name.toLowerCase().includes(q.toLowerCase())).slice(0, 12);
-    for (const b of hits) {
-      const d = document.createElement('div');
-      d.className = 'hit';
-      d.dataset.id = b.id;
-      d.innerHTML = `<span>${b.name}</span><span class="dim">${b.type}${b.parent ? ' · ' + BODY_BY_ID[b.parent].name : ''}</span>`;
-      d.addEventListener('click', () => { this.app.selectAndTarget(b.id); box.innerHTML = ''; $('searchBox').value = ''; });
-      box.appendChild(d);
-    }
-  }
-
   select(id) {
     this.selectedId = id;
     this._elemsFilled = false;
@@ -312,9 +329,8 @@ export class UI {
             $('scaleTrue').checked = true;
             $('scaleValue').textContent = '×1';
             this.setMode('center');
-            app.rig.look.trackId = 'sun';
+            this.setLookAt('sun');
             app.rig.look.fov = 3;
-            $('lookAtSel').value = 'sun';
             app.clock.paused = true;
             this._syncTimeButtons();
           });
@@ -416,6 +432,11 @@ export class UI {
     if (app.nbody.active) {
       $('nbodyDivergence').textContent = `Earth divergence: ${fmtDistance(app.nbody.divergenceKm(clock.ut))} after ${((clock.ut - app.nbody.startUt)).toFixed(1)} d`;
     } else $('nbodyDivergence').textContent = '—';
+
+    // highlight the current lock target in the go-to grid
+    if (this._gotoBtns) {
+      for (const [bid, btn] of this._gotoBtns) btn.classList.toggle('active', bid === app.rig.targetId);
+    }
 
     // fps
     this._fps.frames++;

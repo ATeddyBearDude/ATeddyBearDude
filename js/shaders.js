@@ -175,10 +175,13 @@ export function makeSunMaterial(tex) {
       void main() {
         #include <logdepthbuf_fragment>
         vec3 c = texture2D(map, vUv).rgb;
-        // limb darkening
+        // seen from space (no atmosphere) the Sun is a brilliant
+        // yellowish-white: push the orange texture strongly toward white
+        c = mix(c, vec3(1.0, 0.985, 0.94), 0.62);
+        // gentle limb darkening
         vec3 V = normalize(cameraPosition - vWorldPos);
-        float limb = pow(max(dot(normalize(vNormal), V), 0.0), 0.55);
-        gl_FragColor = vec4(c * (0.55 + 0.75 * limb) * 1.35, 1.0);
+        float limb = pow(max(dot(normalize(vNormal), V), 0.0), 0.4);
+        gl_FragColor = vec4(c * (0.75 + 0.45 * limb) * 1.55, 1.0);
         #include <colorspace_fragment>
       }
     `,

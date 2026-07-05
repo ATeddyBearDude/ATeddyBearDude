@@ -65,12 +65,15 @@ input[type=checkbox], input[type=radio] { accent-color: #4a80b8; margin: 0 3px 0
 .togglegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 6px; }
 .togglegrid label { color: #9aa5b2; font-size: 11px; white-space: nowrap; cursor: pointer; }
 
-#searchResults { max-height: 150px; overflow-y: auto; }
-#searchResults .hit {
-  padding: 1px 6px; cursor: pointer; display: flex; justify-content: space-between;
+/* compact body grids (go to / look at) */
+.gridhead { margin-top: 4px; text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; }
+.bodygrid { display: flex; flex-wrap: wrap; gap: 2px; margin: 3px 0; }
+.bodygrid button {
+  padding: 1px 5px; font-size: 10px; line-height: 1.5;
+  border-color: #1e2c3c;
 }
-#searchResults .hit:hover, #searchResults .hit.kb { background: #1d3048; }
-#searchResults .hit .dim { font-size: 10px; }
+.bodygrid button.moonb { color: #8b96a4; }
+.bodygrid button.active { background: #2b4a66; color: #fff; border-color: #5588bb; }
 
 table.info, table.elems { width: 100%; border-collapse: collapse; }
 table.info td, table.elems td { padding: 1px 4px 1px 0; vertical-align: baseline; }
@@ -88,25 +91,25 @@ table.elems input { width: 130px; }
 .ov {
   position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer;
   transform: translate(-100px, -100px); white-space: nowrap; display: none;
-  user-select: none; z-index: 5;
+  user-select: none; z-index: 5; will-change: transform;
 }
+/* dot centered EXACTLY on the projected body position */
 .ov .dot {
-  display: inline-block; width: 5px; height: 5px; border-radius: 50%;
-  vertical-align: middle; margin-right: 4px; margin-top: -7px;
+  position: absolute; left: -2.5px; top: -2.5px;
+  width: 5px; height: 5px; border-radius: 50%;
   box-shadow: 0 0 3px rgba(255,255,255,0.35);
-  transform: translate(-2px, -2px);
 }
 .ov .txt {
+  position: absolute; left: 6px; top: -14px;
   font-size: 10.5px; color: rgba(200, 212, 226, 0.85);
   text-shadow: 0 0 3px #000, 0 0 6px #000;
-  position: relative; top: -9px; left: -1px;
   visibility: hidden;
 }
 .ov.nametag .txt { visibility: visible; }
 .ov.sel { z-index: 7; }   /* selected body's label always wins overlaps */
 .ov.sel .txt { color: #ffd97d; visibility: visible; }
 .ov.sel .dot { box-shadow: 0 0 6px #ffd97d; }
-.ov-lagrange .dot { border-radius: 0; width: 6px; height: 6px; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); }
+.ov-lagrange .dot { border-radius: 0; width: 6px; height: 6px; left: -3px; top: -3px; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); }
 .ov-lagrange .txt { color: #7fd4a8; visibility: visible; font-size: 9.5px; }
 
 /* ---------- misc ---------- */

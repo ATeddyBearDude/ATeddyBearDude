@@ -485,10 +485,10 @@ export function glowTexture() {
   cv.width = cv.height = 256;
   const ctx = cv.getContext('2d');
   const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
-  g.addColorStop(0, 'rgba(255,240,210,1)');
-  g.addColorStop(0.18, 'rgba(255,225,170,0.55)');
-  g.addColorStop(0.5, 'rgba(255,200,120,0.12)');
-  g.addColorStop(1, 'rgba(255,180,80,0)');
+  g.addColorStop(0, 'rgba(255,253,248,1)');
+  g.addColorStop(0.16, 'rgba(255,248,228,0.6)');
+  g.addColorStop(0.5, 'rgba(255,235,190,0.13)');
+  g.addColorStop(1, 'rgba(255,220,160,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 256, 256);
   const tex = new THREE.CanvasTexture(cv);

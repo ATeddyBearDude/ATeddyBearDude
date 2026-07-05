@@ -49,17 +49,11 @@
       <button id="modeFree" title="Fly anywhere — drag to look, wheel/pinch to move, WASD/QE + Shift to fly">free roam</button>
     </div>
     <div class="dim" id="modeHint">locked on target (always centered) · drag = orbit around it · wheel/pinch = zoom · double-tap a body = go there</div>
-    <div class="row">
-      <label>go to</label>
-      <input id="searchBox" type="text" placeholder="search any body…" autocomplete="off">
-    </div>
-    <div id="searchResults"></div>
-    <div class="row quickrow" id="quickTargets"></div>
+    <div class="dim gridhead">go to</div>
+    <div class="bodygrid" id="quickTargets"></div>
     <div id="centerControls" class="hidden">
-      <div class="row">
-        <label>look at</label>
-        <select id="lookAtSel" title="Keep this body centered on screen"><option value="">— free look —</option></select>
-      </div>
+      <div class="dim gridhead">look at (hard lock)</div>
+      <div class="bodygrid" id="lookAtGrid"></div>
       <div class="row dim" id="viewReadout"></div>
     </div>
   </details>
@@ -67,8 +61,8 @@
   <details open>
     <summary>Scale</summary>
     <div class="row">
-      <label><input type="radio" name="scalemode" id="scaleTrue"> true 1:1</label>
-      <label><input type="radio" name="scalemode" id="scaleVis" checked> enlarged</label>
+      <label><input type="radio" name="scalemode" id="scaleTrue" checked> true 1:1</label>
+      <label><input type="radio" name="scalemode" id="scaleVis"> enlarged</label>
     </div>
     <div class="row">
       <label>bodies ×</label>

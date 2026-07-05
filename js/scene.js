@@ -362,6 +362,9 @@ export class SceneManager {
         if (glow) {
           const d = camPos.distanceTo(scenePos[b.id]);
           glow.scale.setScalar(Math.max(re * 9, d * 0.05));
+          // fade the glow when the camera is close enough to be inside the
+          // sprite, so it doesn't wash the whole sky beige
+          glow.material.opacity = 0.85 * Math.min(1, Math.max(0, (d / re - 1.5) / 8));
         }
       }
     }
@@ -514,6 +517,12 @@ export class SceneManager {
   }
 
   _updateOverlay(scenePos, camera, opts, selection) {
+    // refresh camera matrices NOW: three.js only updates them inside
+    // render(), so projecting with stale matrices makes every HTML marker
+    // lag the WebGL scene by one frame — very visible during fast camera
+    // moves, and it made bodies appear to sit off their orbit lines
+    camera.updateMatrixWorld();
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
     const w = this.overlayEl.clientWidth, h = this.overlayEl.clientHeight;
     const proj = this._tmpV;
     const parentScreen = {};

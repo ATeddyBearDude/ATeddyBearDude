@@ -31,8 +31,8 @@ class App {
     this.selection = 'earth';
     this.ui.select('earth');
 
-    // start: enlarged bodies (×50, proportional) for a friendly first view
-    this.rig.distU = 900;
+    // start: true 1:1 scale, Earth filling a good part of the view
+    this.rig.distU = 0.055;
     this._lastReal = performance.now();
     this._lastUiRefresh = 0;
     this._lastTraceUt = null;
@@ -79,8 +79,7 @@ class App {
       // in planetarium view, double-tapping a sky object locks onto it
       if (id !== this.rig.targetId) {
         this.select(id);
-        this.rig.look.trackId = id;
-        document.getElementById('lookAtSel').value = id;
+        this.ui.setLookAt(id);
       }
     } else {
       this.selectAndTarget(id);

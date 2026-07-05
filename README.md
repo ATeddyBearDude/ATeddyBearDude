@@ -95,7 +95,8 @@ components (14 000).
 
 ### Scale
 
-- **True 1:1** for sizes *and* distances, or **enlarged** mode where every
+- Starts in **true 1:1** by default (Earth close-up), or switch to
+  **enlarged** mode where every
   body radius is multiplied by the *same* factor (×1–×1 000): relative
   proportions are always preserved — Jupiter can never outgrow the Sun.
   Orbital geometry always stays 1:1. The current mode and factor are shown
@@ -138,8 +139,11 @@ real measured values; one button resets everything.
 
 ### Extras
 
-Eclipse/transit/opposition/moon-phase **event search** (jumps you to the
-event — solar eclipses even place you on the centerline looking at the Sun) ·
+Every body is one tap away in the **go to** grid (all 33 bodies; the same
+grid drives "look at" in from-body mode) · **press-and-hold** the step
+buttons to skip repeatedly at the chosen interval ·
+eclipse/transit/opposition/moon-phase **event search** (jumps you to the
+event and aims at the Sun from Earth) ·
 Lagrange-point markers (Sun–Earth/Mars/Jupiter/Saturn, Earth–Moon; collinear
 points Newton-solved from the CR3BP each frame) · shadow-cone visualization ·
 angular-separation + distance **measurement tool** · ecliptic plane grid,
