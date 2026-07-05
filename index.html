@@ -48,7 +48,7 @@
       <button id="modeCenter" title="Look out from the body's center (planetarium view) — see the sky as that world sees it">from body</button>
       <button id="modeFree" title="Fly anywhere — drag to look, wheel/pinch to move, WASD/QE + Shift to fly">free roam</button>
     </div>
-    <div class="dim" id="modeHint">drag = rotate · wheel/pinch = zoom · right-drag/2-finger = pan · double-tap a body = go there</div>
+    <div class="dim" id="modeHint">locked on target (always centered) · drag = orbit around it · wheel/pinch = zoom · double-tap a body = go there</div>
     <div class="row">
       <label>go to</label>
       <input id="searchBox" type="text" placeholder="search any body…" autocomplete="off">
@@ -208,8 +208,8 @@
   C cycle camera mode · WASD/QE+Shift fly (free roam) · L labels · O orbits ·
   G grids · T trace · H help<br>
   <b>Mouse/touch</b>: drag = rotate/look · wheel/pinch = zoom (orbit: distance,
-  from-body: FOV, free: move) · right-drag / shift-drag / 2-finger = pan ·
-  tap label = select · double-tap body = go there
+  from-body: FOV, free: move) · tap label = select ·
+  double-tap body = go there (orbit/free) or look at it (from-body)
 </div>
 <button id="btnHelp" title="help [H]">?</button>
 

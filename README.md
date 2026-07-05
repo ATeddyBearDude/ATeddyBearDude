@@ -103,17 +103,20 @@ components (14 000).
 
 ### Camera
 
-- **Orbit mode**: lock onto any body (it stays centered); drag to rotate,
-  wheel/pinch to zoom, right-drag / two-finger drag to pan; smooth focus
-  transitions; double-click/double-tap any body to travel to it.
+- **Orbit mode** is a hard lock: the target is always dead-center; dragging
+  orbits around it, wheel/pinch zooms. Double-click/double-tap any body to
+  travel to it (smooth focus transition).
 - **From-body mode** (planetarium): view the sky from the *center* of any
-  body in an inertial frame — the body itself is hidden. "Look at" keeps any
-  other object centered as it moves; wheel/pinch zooms FOV down to 0.3°
-  (telescope). Watch retrograde loops, eclipses, transits, phases and
-  apparent-size changes exactly as observed from that world.
-- **Free roam**: fly anywhere — drag looks, wheel/pinch dollies (speed
-  scales with distance to the nearest body, so it's usable from planetary
-  close-ups to interplanetary hops), WASD/QE + Shift on a keyboard.
+  body in an inertial frame — the body itself is hidden. Engaging "look at"
+  hard-locks that object on screen (dragging is disabled until you switch
+  back to "— free look —"); double-tapping a sky object locks onto it.
+  Wheel/pinch zooms FOV down to 0.3° (telescope). Watch retrograde loops,
+  eclipses, transits, phases and apparent-size changes exactly as observed
+  from that world. "Look at" only exists in this mode.
+- **Free roam**: fly anywhere — drag looks, wheel/pinch glides forward/back
+  (one full pinch ≈ 1× the distance to the nearest body, so the same gesture
+  works from cloud-tops to interplanetary hops), WASD/QE + Shift on a
+  keyboard. The status bar shows the nearest body and its distance.
 - **Trace target path** (toggle + clear) draws the selected body's apparent
   motion against the stars from your current viewpoint — lock onto Earth,
   select Mars, run time at a few days/second and the classic retrograde

@@ -73,7 +73,18 @@ class App {
     this._raycaster.setFromCamera(ndc, this.rig.camera);
     const meshes = Object.values(this.sceneMgr.entries).map(en => en.mesh);
     const hits = this._raycaster.intersectObjects(meshes, false);
-    if (hits.length) this.selectAndTarget(hits[0].object.userData.bodyId);
+    if (!hits.length) return;
+    const id = hits[0].object.userData.bodyId;
+    if (this.rig.mode === 'center') {
+      // in planetarium view, double-tapping a sky object locks onto it
+      if (id !== this.rig.targetId) {
+        this.select(id);
+        this.rig.look.trackId = id;
+        document.getElementById('lookAtSel').value = id;
+      }
+    } else {
+      this.selectAndTarget(id);
+    }
   }
 
   // ---------------- physics mode ----------------

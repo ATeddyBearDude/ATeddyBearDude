@@ -66,9 +66,9 @@ export class UI {
 
     // camera modes
     const modeHints = {
-      orbit: 'drag = rotate · wheel/pinch = zoom · right-drag/2-finger = pan · double-tap a body = go there',
-      center: 'you are AT the target body, looking out · drag = look around · wheel/pinch = telescope zoom · "look at" keeps a body centered',
-      free: 'drag = look · wheel/pinch = move forward/back · WASD/QE fly, Shift = faster',
+      orbit: 'locked on target (always centered) · drag = orbit around it · wheel/pinch = zoom · double-tap a body = go there',
+      center: 'you are AT the target body, looking out · "look at" hard-locks another body on screen (drag disabled) · choose "— free look —" to look around · double-tap a body = look at it',
+      free: 'drag = look · wheel/pinch = glide forward/back · WASD/QE + Shift = fly',
     };
     for (const [btn, mode] of [['modeOrbit', 'orbit'], ['modeCenter', 'center'], ['modeFree', 'free']]) {
       $(btn).addEventListener('click', () => this.setMode(mode));
@@ -397,7 +397,21 @@ export class UI {
       $('viewReadout').textContent = `looking at RA ${ra.toFixed(2)}h / Dec ${dec.toFixed(1)}° · FOV ${app.rig.look.fov.toFixed(2)}°` +
         (app.rig.look.trackId ? ` · tracking ${BODY_BY_ID[app.rig.look.trackId].name}` : '');
     } else {
-      $('statusRef').textContent = 'wheel/pinch = move · WASD/QE fly · Shift = faster';
+      const nid = app.rig._nearestId;
+      const nu = app.rig._lastNearestU;
+      $('statusRef').textContent = nid && nu !== undefined
+        ? `nearest: ${BODY_BY_ID[nid].name} (${fmtDistance(nu * KM_PER_UNIT)})`
+        : 'wheel/pinch = move · WASD/QE fly';
+    }
+
+    // keep the date picker prefilled with the sim time (unless being edited)
+    if (document.activeElement !== $('dateInput')) {
+      const d = clock.date;
+      const y = d.getUTCFullYear();
+      if (isFinite(d.getTime()) && y >= 1 && y <= 9999) {
+        const p = (n, w = 2) => String(n).padStart(w, '0');
+        $('dateInput').value = `${p(y, 4)}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+      }
     }
     if (app.nbody.active) {
       $('nbodyDivergence').textContent = `Earth divergence: ${fmtDistance(app.nbody.divergenceKm(clock.ut))} after ${((clock.ut - app.nbody.startUt)).toFixed(1)} d`;

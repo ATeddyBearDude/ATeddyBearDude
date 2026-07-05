@@ -35,7 +35,6 @@ export class CameraRig {
     this.distU = 0.05;
     this.yawDeg = 35;
     this.pitchDeg = 18;
-    this.panOffsetKm = [0, 0, 0];
     this.orbitFov = 50;
 
     // center ("view from body") state
@@ -59,7 +58,6 @@ export class CameraRig {
     if (id === this.targetId) return;
     const prevFocus = [...this._lastFocus];
     this.targetId = id;
-    this.panOffsetKm = [0, 0, 0];
     this._focusBlend = { from: prevFocus, t0: performance.now(), dur: 800 };
     if (this.look.trackId === id) this.look.trackId = id === 'sun' ? 'earth' : 'sun';
   }
@@ -93,7 +91,7 @@ export class CameraRig {
     let focusKm;
 
     if (this.mode === 'orbit') {
-      focusKm = V.add(targetPos, this.panOffsetKm);
+      focusKm = targetPos;
       this.distU = clamp(this.distU, radU * 1.03 + 1e-9, 4.5e5);
       const y = this.yawDeg * DEG, p = this.pitchDeg * DEG;
       const dir = new THREE.Vector3(Math.cos(p) * Math.cos(y), Math.sin(p), Math.cos(p) * Math.sin(y));
@@ -153,7 +151,7 @@ export class CameraRig {
     const p = this.freePosKm || this._lastFocus;
     for (const b of BODIES) {
       const d = V.len(V.sub(snap.pos.get(b.id), p)) / KM_PER_UNIT - (entries[b.id]?.displayedRadius || 0);
-      if (d < best) best = d;
+      if (d < best) { best = d; this._nearestId = b.id; }
     }
     return Math.max(best, 1e-7);
   }
@@ -191,16 +189,22 @@ export class CameraRig {
   _zoom(deltaFactor) {
     if (this.mode === 'orbit') this.distU *= deltaFactor;
     else if (this.mode === 'center') this.look.fov = clamp(this.look.fov * deltaFactor, 0.3, 110);
-    else this._dolly(deltaFactor < 1 ? 0.22 : -0.22);
+    // free roam: dolly proportionally to the gesture, so a slow pinch is a
+    // slow glide (a fixed step per event made pinch far too sensitive);
+    // tuned so one full pinch ≈ 1× the distance to the nearest body
+    else this._dolly((1 - deltaFactor) * 0.75);
   }
 
   _rotate(dx, dy) {
     if (this.mode === 'orbit') {
+      // orbit is a hard lock: rotating always keeps the target centered
       this.yawDeg += dx * 0.25;
       this.pitchDeg = clamp(this.pitchDeg + dy * 0.25, -89.5, 89.5);
     } else if (this.mode === 'center') {
+      // while "look at" is engaged the view is locked — dragging does
+      // nothing; pick "— free look —" to look around manually
+      if (this.look.trackId) return;
       const k = this.look.fov / 480;
-      if (dx || dy) this.look.trackId = null;   // manual look cancels tracking
       this.look.yawDeg += dx * k;
       this.look.pitchDeg = clamp(this.look.pitchDeg - dy * k, -89.9, 89.9);
     } else {
@@ -208,15 +212,6 @@ export class CameraRig {
       this.freeYawDeg += dx * k;
       this.freePitchDeg = clamp(this.freePitchDeg - dy * k, -89.9, 89.9);
     }
-  }
-
-  _pan(dx, dy) {
-    if (this.mode !== 'orbit') return;
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-    const upv = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
-    const kPan = this.distU * 0.0016;
-    const dScene = right.multiplyScalar(-dx * kPan).add(upv.multiplyScalar(dy * kPan));
-    this.panOffsetKm = V.add(this.panOffsetKm, sceneToEclKm(dScene));
   }
 
   _bindInput() {
@@ -230,24 +225,19 @@ export class CameraRig {
       const pt = this._pointers.get(e.pointerId);
       if (!pt) return;
       if (this._pointers.size === 2) {
-        // pinch zoom + two-finger pan
+        // pinch zoom
         pt.x = e.clientX; pt.y = e.clientY;
         const [a, b] = [...this._pointers.values()];
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
-        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-        if (this._pinchPrev) {
-          if (this._pinchPrev.dist > 0 && dist > 0) {
-            this._zoom(clamp(this._pinchPrev.dist / dist, 0.9, 1.111));
-          }
-          this._pan(mid.x - this._pinchPrev.mid.x, mid.y - this._pinchPrev.mid.y);
+        if (this._pinchPrev && this._pinchPrev.dist > 0 && dist > 0) {
+          this._zoom(clamp(this._pinchPrev.dist / dist, 0.94, 1.064));
         }
-        this._pinchPrev = { dist, mid };
+        this._pinchPrev = { dist };
         return;
       }
       const dx = e.clientX - pt.x, dy = e.clientY - pt.y;
       pt.x = e.clientX; pt.y = e.clientY;
-      if (pt.button === 2 || e.shiftKey) this._pan(dx, dy);
-      else this._rotate(dx, dy);
+      this._rotate(dx, dy);
     });
     const drop = e => { this._pointers.delete(e.pointerId); this._pinchPrev = null; };
     cv.addEventListener('pointerup', drop);
@@ -276,7 +266,7 @@ export class CameraRig {
   serialize() {
     return {
       mode: this.mode, targetId: this.targetId, distU: this.distU,
-      yawDeg: this.yawDeg, pitchDeg: this.pitchDeg, panOffsetKm: this.panOffsetKm,
+      yawDeg: this.yawDeg, pitchDeg: this.pitchDeg,
       orbitFov: this.orbitFov, look: { ...this.look },
       freePosKm: this.freePosKm, freeYawDeg: this.freeYawDeg,
       freePitchDeg: this.freePitchDeg, freeFov: this.freeFov,
@@ -286,7 +276,7 @@ export class CameraRig {
     Object.assign(this, {
       mode: s.mode === 'surface' ? 'center' : (s.mode || 'orbit'),
       targetId: s.targetId, distU: s.distU,
-      yawDeg: s.yawDeg, pitchDeg: s.pitchDeg, panOffsetKm: s.panOffsetKm || [0, 0, 0],
+      yawDeg: s.yawDeg, pitchDeg: s.pitchDeg,
       orbitFov: s.orbitFov || 50,
       freePosKm: s.freePosKm || null,
       freeYawDeg: s.freeYawDeg || 0, freePitchDeg: s.freePitchDeg || 0, freeFov: s.freeFov || 55,
