@@ -54,6 +54,11 @@
     <div id="centerControls" class="hidden">
       <div class="dim gridhead">look at (hard lock)</div>
       <div class="bodygrid" id="lookAtGrid"></div>
+      <div class="row">
+        <label title="Record the tracked body's apparent path against the stars"><input type="checkbox" id="tTrace"> trace path</label>
+        <button id="btnClearTrace">clear</button>
+      </div>
+      <div class="dim">run time forward while tracking a planet to draw its retrograde loop</div>
       <div class="row dim" id="viewReadout"></div>
     </div>
   </details>
@@ -90,11 +95,6 @@
       <label><input type="checkbox" id="tCones"> shadow cones</label>
       <label><input type="checkbox" id="tLagrange"> Lagrange points</label>
       <label><input type="checkbox" id="tLightTime"> light-time delay</label>
-      <label><input type="checkbox" id="tTrace"> trace target path</label>
-    </div>
-    <div class="row">
-      <button id="btnClearTrace" title="Erase the recorded apparent path">clear trace</button>
-      <span class="dim">trace = apparent path of the selected body from your viewpoint</span>
     </div>
     <div class="row">
       <label>stars</label>

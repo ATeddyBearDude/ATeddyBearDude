@@ -195,13 +195,20 @@ export class SceneManager {
     // grid vertices are in their native frame (pole = +Z); orient into scene:
     // v_scene = S · M_frame→ecl · v_frame,  S = ecl→scene = [[1,0,0],[0,0,1],[0,-1,0]]
     const S = [[1, 0, 0], [0, 0, 1], [0, -1, 0]];
-    // equatorial grid: major lines every 30° with minor lines every 10°
-    // dec / 15° RA (1 hour), plus polar cross-hairs
-    this.gridEqSky = makeSkyGrid(0x3a5a3a, { decStep: 30, raStep: 30, opacity: 0.55, minorDecStep: 10, minorRaStep: 15, minorOpacity: 0.22 });
+    // equatorial grid in three density tiers; finer tiers appear as the
+    // FOV narrows (telescope zoom), like a chart that redraws at each scale
+    this.gridEqSky = makeSkyGrid(0x3a5a3a, [
+      { name: 'major', decStep: 30, raStep: 30, opacity: 0.55 },
+      { name: 'minor', decStep: 10, raStep: 15, opacity: 0.28 },
+      { name: 'fine', decStep: 2.5, raStep: 3.75, opacity: 0.16 },
+    ]);
     const M_ECL_FROM_EQJ = M3.transpose(M_EQJ_FROM_ECL);
     this.gridEqSky.quaternion.setFromRotationMatrix(m3ToMatrix4(M3.mul(S, M_ECL_FROM_EQJ)));
     this.scene.add(this.gridEqSky);
-    this.gridEclSky = makeSkyGrid(0x4a4a2a, { decStep: 30, raStep: 30, opacity: 0.45 });
+    this.gridEclSky = makeSkyGrid(0x4a4a2a, [
+      { name: 'major', decStep: 30, raStep: 30, opacity: 0.45 },
+      { name: 'minor', decStep: 10, raStep: 15, opacity: 0.2 },
+    ]);
     this.gridEclSky.quaternion.setFromRotationMatrix(m3ToMatrix4(S));
     this.scene.add(this.gridEclSky);
   }
@@ -443,6 +450,14 @@ export class SceneManager {
     this.gridEclSky.visible = !!opts.gridEclSky;
     this.gridEclSky.position.copy(camPos);
     this.gridEclSky.scale.setScalar(3.5e7);
+    // finer grid tiers fade in as the FOV narrows (telescope zoom)
+    const fov = camera.fov;
+    for (const grid of [this.gridEqSky, this.gridEclSky]) {
+      const fine = grid.getObjectByName('fine');
+      const minor = grid.getObjectByName('minor');
+      if (minor) minor.visible = true;
+      if (fine) fine.visible = fov < 14;
+    }
 
     // -- Lagrange points --
     const showLag = !!opts.lagrange;
@@ -541,6 +556,8 @@ export class SceneManager {
       ov.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
       ov.el.classList.toggle('sel', !!isSel);
       ov.el.classList.toggle('nametag', !!opts.labels);
+      // labels and markers are independent: dots only when markers is on
+      ov.el.classList.toggle('nodot', ov.kind === 'body' && !opts.markers);
       ov.visible = true;
       return [x, y];
     };
@@ -661,31 +678,32 @@ function updateRingGeometryRatio(mesh, ratio) {
   geo.userData.ratio = ratio;
 }
 
-function makeSkyGrid(color, cfg) {
+function makeSkyGrid(color, tiers) {
   const group = new THREE.Group();
   // grid built in a frame where +Z is the pole; caller orients via quaternion
-  const addLines = (decStep, raStep, opacity) => {
-    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
-    for (let decDeg = -90 + decStep; decDeg <= 90 - decStep; decDeg += decStep) {
+  for (const tier of tiers) {
+    const sub = new THREE.Group();
+    sub.name = tier.name;
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: tier.opacity, depthWrite: false });
+    for (let decDeg = -90 + tier.decStep; decDeg <= 90 - tier.decStep + 1e-9; decDeg += tier.decStep) {
       const pts = [];
       const cd = Math.cos(decDeg * DEG), sd = Math.sin(decDeg * DEG);
-      for (let k = 0; k <= 144; k++) {
-        const ra = k / 144 * 2 * Math.PI;
+      for (let k = 0; k <= 180; k++) {
+        const ra = k / 180 * 2 * Math.PI;
         pts.push(new THREE.Vector3(cd * Math.cos(ra), cd * Math.sin(ra), sd));
       }
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+      sub.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
     }
-    for (let raDeg = 0; raDeg < 360; raDeg += raStep) {
+    for (let raDeg = 0; raDeg < 360; raDeg += tier.raStep) {
       const pts = [];
       for (let k = 0; k <= 72; k++) {
         const dec = (-88 + k / 72 * 176) * DEG;
         pts.push(new THREE.Vector3(Math.cos(dec) * Math.cos(raDeg * DEG), Math.cos(dec) * Math.sin(raDeg * DEG), Math.sin(dec)));
       }
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+      sub.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
     }
-  };
-  if (cfg.minorDecStep) addLines(cfg.minorDecStep, cfg.minorRaStep, cfg.minorOpacity);
-  addLines(cfg.decStep, cfg.raStep, cfg.opacity);
+    group.add(sub);
+  }
   group.renderOrder = -50;
   return group;
 }

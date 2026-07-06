@@ -37,8 +37,11 @@ export class CameraRig {
     this.pitchDeg = 18;
     this.orbitFov = 50;
 
-    // center ("view from body") state
-    this.look = { yawDeg: 0, pitchDeg: 0, fov: 60, trackId: 'sun' };
+    // center ("view from body") state. `site` ({latDeg, lonDeg}) optionally
+    // offsets the viewpoint to a surface location riding the body's
+    // rotation — set by the eclipse preset, where topocentric parallax
+    // (~1 Earth radius ≈ up to 1° on the Moon) decides totality vs miss.
+    this.look = { yawDeg: 0, pitchDeg: 0, fov: 60, trackId: 'sun', site: null };
 
     // free roam state
     this.freePosKm = null;          // ecliptic km, double precision
@@ -59,6 +62,7 @@ export class CameraRig {
     const prevFocus = [...this._lastFocus];
     this.targetId = id;
     this._focusBlend = { from: prevFocus, t0: performance.now(), dur: 800 };
+    this.look.site = null;
     if (this.look.trackId === id) this.look.trackId = id === 'sun' ? 'earth' : 'sun';
   }
 
@@ -101,6 +105,18 @@ export class CameraRig {
       this.camera.fov = this.orbitFov;
     } else if (this.mode === 'center') {
       focusKm = targetPos;
+      if (this.look.site) {
+        const m = snap.orient.get(this.targetId);
+        const lat = this.look.site.latDeg * DEG, lon = this.look.site.lonDeg * DEG;
+        const cl = Math.cos(lat);
+        const local = [cl * Math.cos(lon), cl * Math.sin(lon), Math.sin(lat)];
+        const upEcl = [
+          m[0][0] * local[0] + m[0][1] * local[1] + m[0][2] * local[2],
+          m[1][0] * local[0] + m[1][1] * local[1] + m[1][2] * local[2],
+          m[2][0] * local[0] + m[2][1] * local[1] + m[2][2] * local[2],
+        ];
+        focusKm = V.add(targetPos, V.scale(upEcl, radU * KM_PER_UNIT));
+      }
       if (this.look.trackId && this.look.trackId !== this.targetId) {
         this.aimAt(this.look.trackId, snap, focusKm);
       }

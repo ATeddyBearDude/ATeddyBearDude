@@ -330,6 +330,10 @@ export class UI {
             $('scaleValue').textContent = '×1';
             this.setMode('center');
             this.setLookAt('sun');
+            // totality is topocentric: view from the point of greatest
+            // eclipse, riding Earth's rotation (from Earth's center a
+            // high-gamma eclipse looks like a near miss)
+            app.rig.look.site = { latDeg: e.latitude ?? 0, lonDeg: e.longitude ?? 0 };
             app.rig.look.fov = 3;
             app.clock.paused = true;
             this._syncTimeButtons();

@@ -106,6 +106,7 @@ table.elems input { width: 130px; }
   visibility: hidden;
 }
 .ov.nametag .txt { visibility: visible; }
+.ov.nodot .dot { display: none; }
 .ov.sel { z-index: 7; }   /* selected body's label always wins overlaps */
 .ov.sel .txt { color: #ffd97d; visibility: visible; }
 .ov.sel .dot { box-shadow: 0 0 6px #ffd97d; }

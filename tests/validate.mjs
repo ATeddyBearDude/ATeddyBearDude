@@ -53,6 +53,35 @@ const ut = d => A.MakeTime(d).ut;
     covered, `sunR=${(rSun * 60).toFixed(2)}′ moonR=${(rMoon * 60).toFixed(2)}′ sep=${(sep * 60).toFixed(2)}′`);
 }
 
+// ---------- 1b. 2026-08-12 eclipse (high gamma — topocentric is decisive) ----------
+{
+  // greatest eclipse 17:46 UTC near Iceland (65.2N, 25.2W). Gamma ≈ 0.90:
+  // from Earth's CENTER the Moon misses the Sun by ~20', so the geocentric
+  // view must NOT be total while the site view IS — this is real parallax.
+  const t = ut(new Date(Date.UTC(2026, 7, 12, 17, 46, 0)));
+  const snap = eph.snapshot(t);
+  const sepFrom = obs => {
+    const toSun = V.norm(V.sub(snap.pos.get('sun'), obs));
+    const toMoon = V.norm(V.sub(snap.pos.get('moon'), obs));
+    return Math.acos(V.dot(toSun, toMoon)) / DEG;
+  };
+  const rads = obs => {
+    const dS = V.len(V.sub(snap.pos.get('sun'), obs));
+    const dM = V.len(V.sub(snap.pos.get('moon'), obs));
+    return [Math.asin(695700 / dS) / DEG, Math.asin(1737.4 / dM) / DEG];
+  };
+  const m = snap.orient.get('earth');
+  const lat = 65.2 * DEG, lon = -25.2 * DEG;
+  const up = [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)];
+  const site = V.add(snap.pos.get('earth'), V.scale(M3.mulVec(m, up), 6371));
+  const sepSite = sepFrom(site), sepGeo = sepFrom(snap.pos.get('earth'));
+  const [rS, rM] = rads(site);
+  check('2026-08-12 17:46 UTC: TOTAL from the Iceland site (sep + rSun ≤ rMoon)',
+    sepSite + rS <= rM + 1e-3, `site sep=${(sepSite * 60).toFixed(2)}′ sunR=${(rS * 60).toFixed(2)}′ moonR=${(rM * 60).toFixed(2)}′`);
+  check('  …but NOT total from Earth\'s center (parallax, gamma≈0.9)',
+    sepGeo > rM - rS, `geocentric sep=${(sepGeo * 60).toFixed(2)}′`);
+}
+
 // ---------- 2. Mars retrograde around 2018 opposition ----------
 {
   const lonAt = t => {

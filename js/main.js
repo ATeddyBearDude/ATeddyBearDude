@@ -49,7 +49,6 @@ class App {
   select(id) {
     this.selection = id;
     this.ui.select(id);
-    this.sceneMgr.setTraceColor(BODY_BY_ID[id].color);
   }
 
   selectAndTarget(id) {
@@ -192,15 +191,29 @@ class App {
       centerBodyId: this.rig.mode === 'center' ? this.rig.targetId : null,
     }, this.opts, this.selection, this.eph);
 
-    // apparent-path trace of the selected body from the current viewpoint
-    if (this.opts.trace && this.selection) {
+    // apparent-path trace: only meaningful when tracking a body from
+    // another body's perspective (from-body mode + look-at engaged)
+    const traceTarget = (this.rig.mode === 'center' && this.rig.look.trackId) ? this.rig.look.trackId : null;
+    if (this.opts.trace && traceTarget) {
+      if (this._traceOf !== traceTarget) {           // tracked body changed
+        this.sceneMgr.clearTrace();
+        this.sceneMgr.setTraceColor(BODY_BY_ID[traceTarget].color);
+        this._traceOf = traceTarget;
+        this._lastTraceUt = null;
+      }
       const sampleGap = Math.max(0.05, Math.min(5, Math.abs(this.clock.effectiveRate) / 86400 * 0.4));
       if (this._lastTraceUt === null || Math.abs(this.clock.ut - this._lastTraceUt) >= sampleGap) {
-        const bodyScene = sceneFromEclKm(snap.pos.get(this.selection), focusKm);
+        const bodyScene = sceneFromEclKm(snap.pos.get(traceTarget), focusKm);
         const dir = bodyScene.sub(this.rig.camera.position);
         if (dir.lengthSq() > 0) this.sceneMgr.pushTraceSample(dir.normalize());
         this._lastTraceUt = this.clock.ut;
       }
+    } else if (this.sceneMgr.traceDirs.length && this.rig.mode !== 'center') {
+      // recording stops when tracking stops, but the drawn path persists in
+      // from-body mode (so you can unlock and admire the whole loop);
+      // leaving from-body mode erases it
+      this.sceneMgr.clearTrace();
+      this._traceOf = null;
     }
 
     this.renderer.render(this.sceneMgr.scene, this.rig.camera);
