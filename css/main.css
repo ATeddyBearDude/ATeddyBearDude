@@ -112,6 +112,9 @@ table.elems input { width: 130px; }
 .ov.sel .dot { box-shadow: 0 0 6px #ffd97d; }
 .ov-lagrange .dot { border-radius: 0; width: 6px; height: 6px; left: -3px; top: -3px; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); }
 .ov-lagrange .txt { color: #7fd4a8; visibility: visible; font-size: 9.5px; }
+.ov-cardinal .dot { display: none; }
+.ov-cardinal .txt { visibility: visible; color: #7fb3e8; font-size: 13px; font-weight: 700; left: -4px; top: -7px; }
+input.short { width: 54px; }
 
 /* ---------- misc ---------- */
 #btnHelp {

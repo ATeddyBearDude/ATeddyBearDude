@@ -98,7 +98,9 @@ class App {
 
   onTimeJump() {
     this.sceneMgr.clearTrace();
+    this._lastTraceDir = null;
     this._lastTraceUt = null;
+    this._traceOf = null;
     if (this.nbody.active) this.nbody.activate(this.clock.ut);   // re-seed
   }
 
@@ -189,6 +191,7 @@ class App {
     this.sceneMgr.update(snap, {
       focusKm, camera: this.rig.camera, sizeScale: this.opts.sizeScale,
       centerBodyId: this.rig.mode === 'center' ? this.rig.targetId : null,
+      site: this.rig.look.site,
     }, this.opts, this.selection, this.eph);
 
     // apparent-path trace: only meaningful when tracking a body from
@@ -199,13 +202,36 @@ class App {
         this.sceneMgr.clearTrace();
         this.sceneMgr.setTraceColor(BODY_BY_ID[traceTarget].color);
         this._traceOf = traceTarget;
+        this._lastTraceDir = null;
         this._lastTraceUt = null;
       }
-      const sampleGap = Math.max(0.05, Math.min(5, Math.abs(this.clock.effectiveRate) / 86400 * 0.4));
-      if (this._lastTraceUt === null || Math.abs(this.clock.ut - this._lastTraceUt) >= sampleGap) {
-        const bodyScene = sceneFromEclKm(snap.pos.get(traceTarget), focusKm);
-        const dir = bodyScene.sub(this.rig.camera.position);
-        if (dir.lengthSq() > 0) this.sceneMgr.pushTraceSample(dir.normalize());
+      // angular threshold sampling (~0.06° per point), with sub-frame
+      // interpolation: when one frame advances time so far that the body
+      // jumped several thresholds, intermediate ephemeris samples fill the
+      // gap — smooth loops at any time rate
+      const dirAt = t => {
+        const obs = this.eph.posOfAt(this.rig.targetId, t);
+        const body = this.eph.posOfAt(traceTarget, t);
+        return sceneFromEclKm(body, obs).normalize();
+      };
+      const THR = 0.001;
+      const dirNow = sceneFromEclKm(snap.pos.get(traceTarget), focusKm)
+        .sub(this.rig.camera.position).normalize();
+      if (this._lastTraceDir === null || this._lastTraceUt === null) {
+        this.sceneMgr.pushTraceSample(dirNow);
+        this._lastTraceDir = dirNow.clone();
+        this._lastTraceUt = this.clock.ut;
+      } else if (this.clock.ut !== this._lastTraceUt) {
+        const jump = this._lastTraceDir.angleTo(dirNow);
+        const n = Math.min(24, Math.max(1, Math.ceil(jump / THR)));
+        for (let k = 1; k <= n; k++) {
+          const t = this._lastTraceUt + (this.clock.ut - this._lastTraceUt) * k / n;
+          const d = k === n ? dirNow : dirAt(t);
+          if (this._lastTraceDir.angleTo(d) > THR) {
+            this.sceneMgr.pushTraceSample(d);
+            this._lastTraceDir = d.clone();
+          }
+        }
         this._lastTraceUt = this.clock.ut;
       }
     } else if (this.sceneMgr.traceDirs.length && this.rig.mode !== 'center') {

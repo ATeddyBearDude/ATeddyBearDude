@@ -82,6 +82,27 @@ const ut = d => A.MakeTime(d).ut;
     sepGeo > rM - rS, `geocentric sep=${(sepGeo * 60).toFixed(2)}′`);
 }
 
+// ---------- 1c. next annular eclipse: 2027-02-06, ring geometry ----------
+{
+  let e = A.SearchGlobalSolarEclipse(A.MakeTime(ut(new Date(Date.UTC(2026, 8, 1)))));
+  for (let i = 0; i < 100 && e.kind !== 'annular'; i++) e = A.NextGlobalSolarEclipse(e.peak);
+  const dateStr = e.peak.date.toISOString().slice(0, 10);
+  check('next annular solar eclipse after Sep 2026 is 2027-02-06', dateStr === '2027-02-06', dateStr);
+  const snap = eph.snapshot(e.peak.ut);
+  const m = snap.orient.get('earth');
+  const lat = (e.latitude ?? 0) * DEG, lon = (e.longitude ?? 0) * DEG;
+  const up = [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)];
+  const site = V.add(snap.pos.get('earth'), V.scale(M3.mulVec(m, up), 6371));
+  const toSun = V.norm(V.sub(snap.pos.get('sun'), site));
+  const toMoon = V.norm(V.sub(snap.pos.get('moon'), site));
+  const sep = Math.acos(V.dot(toSun, toMoon)) / DEG;
+  const rS = Math.asin(695700 / V.len(V.sub(snap.pos.get('sun'), site))) / DEG;
+  const rM = Math.asin(1737.4 / V.len(V.sub(snap.pos.get('moon'), site))) / DEG;
+  check('  …Moon disk smaller than Sun and centered from the site (ring of fire)',
+    rM < rS && sep + rM <= rS + 1e-3,
+    `sep=${(sep * 60).toFixed(2)}′ sunR=${(rS * 60).toFixed(2)}′ moonR=${(rM * 60).toFixed(2)}′`);
+}
+
 // ---------- 2. Mars retrograde around 2018 opposition ----------
 {
   const lonAt = t => {

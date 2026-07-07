@@ -118,10 +118,14 @@ components (14 000).
   (one full pinch ≈ 1× the distance to the nearest body, so the same gesture
   works from cloud-tops to interplanetary hops), WASD/QE + Shift on a
   keyboard. The status bar shows the nearest body and its distance.
-- **Trace target path** (toggle + clear) draws the selected body's apparent
-  motion against the stars from your current viewpoint — lock onto Earth,
-  select Mars, run time at a few days/second and the classic retrograde
-  loop draws itself.
+- **Trace path** (from-body mode, while tracking) draws the tracked body's
+  apparent motion against the stars: angular-threshold sampling (~0.06° per
+  point) with sub-frame ephemeris interpolation, so the retrograde loop is
+  smooth at any time rate. Orbit lines are Catmull-Rom-smoothed (300
+  ephemeris samples → 1200 curve points), so no corners when zoomed.
+- An optional **surface site** (lat/lon) offsets the from-body viewpoint to
+  the rotating surface — topocentric parallax — and anchors the azimuthal
+  grid. Eclipse presets set it automatically.
 
 ### Time
 
@@ -142,8 +146,9 @@ real measured values; one button resets everything.
 Every body is one tap away in the **go to** grid (all 33 bodies; the same
 grid drives "look at" in from-body mode) · **press-and-hold** the step
 buttons to skip repeatedly at the chosen interval ·
-eclipse/transit/opposition/moon-phase **event search** (jumps you to the
-event and aims at the Sun from Earth) ·
+eclipse (**total and annular** searched separately) / transit / opposition /
+moon-phase **event search** — solar eclipses jump you to the peak, place the
+viewpoint on the centerline and aim at the Sun ·
 Lagrange-point markers (Sun–Earth/Mars/Jupiter/Saturn, Earth–Moon; collinear
 points Newton-solved from the CR3BP each frame) · shadow-cone visualization ·
 angular-separation + distance **measurement tool** · ecliptic plane grid,
@@ -152,11 +157,22 @@ equatorial + ecliptic sky grids · full **save/load** of simulation state
 
 ### Sky
 
-NASA SVS Tycho star map at **8k** (real stars + the Milky Way band) rendered
-in true equatorial orientation by direction-sampling in the shader — the
-galactic plane sits exactly where it belongs relative to the ecliptic, and
-planets appear against their real constellations (May 2018 puts Mars in
-Capricornus and Saturn by the galactic center in Sagittarius, as observed).
+Two layers, so zooming never hits texture pixels:
+
+- NASA SVS Tycho star map at **8k** (Milky Way + faint star background) in
+  true equatorial orientation — the galactic plane sits exactly where it
+  belongs, and planets appear against their real constellations (May 2018
+  puts Mars in Capricornus and Saturn by the galactic center, as observed).
+  The map fades out as the FOV narrows below ~10°.
+- **~10 000 real catalog stars** (HYG, mag ≤ 6.6) as sharp shader points
+  with B−V colors and magnitude-scaled sizes — these carry the deep-zoom
+  sky, Stellarium-style, down to the 0.02° FOV floor.
+
+Sky grids (equatorial, ecliptic, and a new **azimuthal/horizon grid** with
+N/E/S/W cardinal labels, anchored to the observer site) are drawn
+analytically in a fragment shader: anti-aliased, never polygonal, and the
+angular step **subdivides automatically as you zoom** (30° → … → 0.01°),
+with the equator/ecliptic/horizon emphasized.
 
 ### Rotation & precession
 

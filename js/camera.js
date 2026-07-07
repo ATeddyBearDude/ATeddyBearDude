@@ -204,7 +204,7 @@ export class CameraRig {
   // ---- input --------------------------------------------------------------
   _zoom(deltaFactor) {
     if (this.mode === 'orbit') this.distU *= deltaFactor;
-    else if (this.mode === 'center') this.look.fov = clamp(this.look.fov * deltaFactor, 0.3, 110);
+    else if (this.mode === 'center') this.look.fov = clamp(this.look.fov * deltaFactor, 0.02, 110);
     // free roam: dolly proportionally to the gesture, so a slow pinch is a
     // slow glide (a fixed step per event made pinch far too sensitive);
     // tuned so one full pinch ≈ 1× the distance to the nearest body

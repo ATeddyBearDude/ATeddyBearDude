@@ -14,7 +14,7 @@ import { BODIES, BODY_BY_ID, childrenOf } from './catalog.js';
 import { V, M3 } from './kepler.js';
 import { M_EQJ_FROM_ECL } from './ephemeris.js';
 import { bodyTexture, proceduralTexture, ringTexture, fileTexture, glowTexture } from './textures.js';
-import { makePlanetMaterial, makeSunMaterial, makeRingMaterial, makeAtmosphereMaterial, makeBeltMaterial, makeSkyMaterial, MAX_OCCLUDERS } from './shaders.js';
+import { makePlanetMaterial, makeSunMaterial, makeRingMaterial, makeAtmosphereMaterial, makeBeltMaterial, makeSkyMaterial, makeSkyGridShaderMaterial, makeStarPointsMaterial, MAX_OCCLUDERS } from './shaders.js';
 
 export const sceneFromEcl = v => new THREE.Vector3(v[0], v[2], -v[1]);
 export function sceneFromEclKm(vKm, focusKm) {
@@ -56,6 +56,7 @@ export class SceneManager {
     this.sphereGeo = new THREE.SphereGeometry(1, 72, 36);
     this._buildBodies();
     this._buildSky();
+    this._buildStars();
     this._buildBelts();
     this._buildGrids();
     this._buildOrbitLines();
@@ -132,6 +133,42 @@ export class SceneManager {
     this.scene.add(this.sky);
   }
 
+  // ---------------- catalog star points ----------------
+  // ~10k real stars (HYG, mag ≤ 6.6) rendered as sharp shader points.
+  // The photo sky map fades out as the FOV narrows and these carry the sky,
+  // so telescope zooms never show texture pixels.
+  _buildStars() {
+    this.starPoints = null;
+    fetch('data/stars_mag66.json').then(r => r.json()).then(arr => {
+      const n = arr.length;
+      const pos = new Float32Array(n * 3);
+      const mag = new Float32Array(n);
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const [raDeg, decDeg, m, ci] = arr[i];
+        const ra = raDeg * DEG, dec = decDeg * DEG;
+        // EQJ direction -> ecliptic -> scene
+        const eqj = [Math.cos(dec) * Math.cos(ra), Math.cos(dec) * Math.sin(ra), Math.sin(dec)];
+        const M = M3.transpose(M_EQJ_FROM_ECL);   // ecl <- eqj
+        const e = M3.mulVec(M, eqj);
+        pos[i * 3] = e[0]; pos[i * 3 + 1] = e[2]; pos[i * 3 + 2] = -e[1];
+        mag[i] = m;
+        const c = bvToRGB(ci);
+        col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2];
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute('aMag', new THREE.BufferAttribute(mag, 1));
+      geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
+      const pts = new THREE.Points(geo, makeStarPointsMaterial());
+      pts.scale.setScalar(3.7e7);
+      pts.renderOrder = -80;
+      pts.frustumCulled = false;
+      this.scene.add(pts);
+      this.starPoints = pts;
+    }).catch(err => console.warn('star catalog failed to load', err));
+  }
+
   // ---------------- belts ----------------
   _buildBelts() {
     const rng = mulberry(20260704);
@@ -194,23 +231,30 @@ export class SceneManager {
     // Sky grids (camera-centered): equatorial (EQJ) and ecliptic
     // grid vertices are in their native frame (pole = +Z); orient into scene:
     // v_scene = S · M_frame→ecl · v_frame,  S = ecl→scene = [[1,0,0],[0,0,1],[0,-1,0]]
-    const S = [[1, 0, 0], [0, 0, 1], [0, -1, 0]];
-    // equatorial grid in three density tiers; finer tiers appear as the
-    // FOV narrows (telescope zoom), like a chart that redraws at each scale
-    this.gridEqSky = makeSkyGrid(0x3a5a3a, [
-      { name: 'major', decStep: 30, raStep: 30, opacity: 0.55 },
-      { name: 'minor', decStep: 10, raStep: 15, opacity: 0.28 },
-      { name: 'fine', decStep: 2.5, raStep: 3.75, opacity: 0.16 },
-    ]);
-    const M_ECL_FROM_EQJ = M3.transpose(M_EQJ_FROM_ECL);
-    this.gridEqSky.quaternion.setFromRotationMatrix(m3ToMatrix4(M3.mul(S, M_ECL_FROM_EQJ)));
-    this.scene.add(this.gridEqSky);
-    this.gridEclSky = makeSkyGrid(0x4a4a2a, [
-      { name: 'major', decStep: 30, raStep: 30, opacity: 0.45 },
-      { name: 'minor', decStep: 10, raStep: 15, opacity: 0.2 },
-    ]);
-    this.gridEclSky.quaternion.setFromRotationMatrix(m3ToMatrix4(S));
-    this.scene.add(this.gridEclSky);
+    // Sky grids are drawn analytically in a fragment shader (no polylines):
+    // perfectly smooth at any zoom, and the angular step subdivides from a
+    // ladder as the FOV narrows — Stellarium-style. Frames:
+    //   equatorial: scene -> ecl -> EQJ ;  ecliptic: scene -> ecl ;
+    //   azimuthal: scene -> local ENU at the observer site (per-frame).
+    const mSceneToEcl = [[1, 0, 0], [0, 0, -1], [0, 1, 0]];
+    const mkGridSphere = (color, opacity, frameM3) => {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), makeSkyGridShaderMaterial(color, opacity));
+      if (frameM3) setMatrix3(mesh.material.uniforms.uFrameFromScene.value, frameM3);
+      mesh.renderOrder = -49;
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+      return mesh;
+    };
+    this.gridEqSky = mkGridSphere(0x5fc287, 0.85, M3.mul(M_EQJ_FROM_ECL, mSceneToEcl));
+    this.gridEclSky = mkGridSphere(0xc2b25f, 0.6, mSceneToEcl);
+    this.gridAzSky = mkGridSphere(0x6f9fdf, 0.9, null);
+
+    // cardinal direction labels for the azimuthal grid
+    this.cardinals = [];
+    for (const [key, name] of [['C:N', 'N'], ['C:E', 'E'], ['C:S', 'S'], ['C:W', 'W']]) {
+      this._addOverlay(key, name, '#7fb3e8', 'cardinal');
+      this.cardinals.push({ key, name, worldPos: new THREE.Vector3() });
+    }
   }
 
   // ---------------- orbit lines ----------------
@@ -248,12 +292,18 @@ export class SceneManager {
       const o = this.orbits[id];
       const period = o.period || 365;
       const pos = o.line.geometry.attributes.position.array;
-      for (let k = 0; k < POINTS_PER_ORBIT; k++) {
-        const t = ut - period + (k / (POINTS_PER_ORBIT - 1)) * period;
+      // sample the ephemeris coarsely, then Catmull-Rom to 4x density —
+      // smooth curves without 4x the (expensive) ephemeris evaluations
+      const raw = [];
+      for (let k = 0; k < RAW_ORBIT_SAMPLES; k++) {
+        const t = ut - period + (k / (RAW_ORBIT_SAMPLES - 1)) * period;
         const rel = V.sub(eph.posOfAt(id, t), eph.posOfAt(b.parent, t));
-        pos[k * 3] = rel[0] / KM_PER_UNIT;
-        pos[k * 3 + 1] = rel[2] / KM_PER_UNIT;
-        pos[k * 3 + 2] = -rel[1] / KM_PER_UNIT;
+        raw.push(new THREE.Vector3(rel[0] / KM_PER_UNIT, rel[2] / KM_PER_UNIT, -rel[1] / KM_PER_UNIT));
+      }
+      const curve = new THREE.CatmullRomCurve3(raw, false, 'centripetal');
+      const smooth = curve.getPoints(POINTS_PER_ORBIT - 1);
+      for (let k = 0; k < POINTS_PER_ORBIT; k++) {
+        pos[k * 3] = smooth[k].x; pos[k * 3 + 1] = smooth[k].y; pos[k * 3 + 2] = smooth[k].z;
       }
       o.line.geometry.attributes.position.needsUpdate = true;
       o.line.geometry.computeBoundingSphere?.();
@@ -298,7 +348,7 @@ export class SceneManager {
   // ---------------- apparent path trace ----------------
   _buildTrace() {
     this.traceGeo = new THREE.BufferGeometry();
-    this.traceMax = 4000;
+    this.traceMax = 12000;
     this.traceGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.traceMax * 3), 3));
     this.traceLine = new THREE.Line(this.traceGeo, new THREE.LineBasicMaterial({ color: 0xffcc44, transparent: true, opacity: 0.9 }));
     this.traceLine.frustumCulled = false;
@@ -439,24 +489,68 @@ export class SceneManager {
     }
 
     // -- sky + grids --
+    // photo sky map fades as FOV narrows (its pixels would show); the
+    // catalog star points stay sharp and carry the deep-zoom sky
+    const fovNow = camera.fov;
+    const texFade = Math.min(1, Math.max(0.04, (fovNow - 0.8) / 10));
     this.sky.position.copy(camPos);
-    this.skyMat.uniforms.uBrightness.value = opts.skyBrightness;
+    this.skyMat.uniforms.uBrightness.value = opts.skyBrightness * texFade;
     this.sky.visible = opts.skyBrightness > 0.01;
+    if (this.starPoints) {
+      this.starPoints.position.copy(camPos);
+      this.starPoints.visible = opts.skyBrightness > 0.01;
+      const u = this.starPoints.material.uniforms;
+      u.uBrightness.value = Math.min(1.5, opts.skyBrightness);
+      u.uZoomBoost.value = Math.min(7, Math.max(1, Math.pow(50 / fovNow, 0.42)));
+    }
     this.gridEclPlane.visible = !!opts.gridEclPlane;
     this.gridEclPlane.position.copy(sunScene);
-    this.gridEqSky.visible = !!opts.gridEqSky;
-    this.gridEqSky.position.copy(camPos);
-    this.gridEqSky.scale.setScalar(3.6e7);
-    this.gridEclSky.visible = !!opts.gridEclSky;
-    this.gridEclSky.position.copy(camPos);
-    this.gridEclSky.scale.setScalar(3.5e7);
-    // finer grid tiers fade in as the FOV narrows (telescope zoom)
-    const fov = camera.fov;
-    for (const grid of [this.gridEqSky, this.gridEclSky]) {
-      const fine = grid.getObjectByName('fine');
-      const minor = grid.getObjectByName('minor');
-      if (minor) minor.visible = true;
-      if (fine) fine.visible = fov < 14;
+    // adaptive grid step: pick from a ladder so ~4-10 lines cross the view;
+    // the shader draws minor + (5x brighter) major + fundamental circle
+    const LADDER = [30, 10, 5, 2, 1, 0.5, 0.25, 0.1, 0.05, 0.02, 0.01];
+    let li = LADDER.findIndex(s => fovNow / s >= 3.2);
+    if (li < 0) li = LADDER.length - 1;
+    const stepMinor = LADDER[li] * DEG;
+    const stepMajor = LADDER[Math.max(0, li - 1)] * DEG;
+    const setGrid = (mesh, on, scale) => {
+      mesh.visible = !!on;
+      if (!mesh.visible) return;
+      mesh.position.copy(camPos);
+      mesh.scale.setScalar(scale);
+      mesh.material.uniforms.uStepMinor.value = stepMinor;
+      mesh.material.uniforms.uStepMajor.value = stepMajor;
+    };
+    setGrid(this.gridEqSky, opts.gridEqSky, 3.4e7);
+    setGrid(this.gridEclSky, opts.gridEclSky, 3.3e7);
+
+    // azimuthal grid: local ENU frame at the observer site on the viewed
+    // body (from-body mode only — a horizon needs a place to stand)
+    const azOn = !!opts.gridAzSky && !!view.centerBodyId;
+    setGrid(this.gridAzSky, azOn, 3.2e7);
+    if (azOn) {
+      const m = snap.orient.get(view.centerBodyId);
+      const site = view.site || { latDeg: 0, lonDeg: 0 };
+      const lat = site.latDeg * DEG, lon = site.lonDeg * DEG;
+      const cl = Math.cos(lat), sl = Math.sin(lat);
+      const bx = sceneFromEcl([m[0][0], m[1][0], m[2][0]]);
+      const by = sceneFromEcl([m[0][1], m[1][1], m[2][1]]);
+      const bz = sceneFromEcl([m[0][2], m[1][2], m[2][2]]);
+      const up = bx.clone().multiplyScalar(cl * Math.cos(lon)).add(by.clone().multiplyScalar(cl * Math.sin(lon))).add(bz.clone().multiplyScalar(sl)).normalize();
+      const north = bx.clone().multiplyScalar(-sl * Math.cos(lon)).add(by.clone().multiplyScalar(-sl * Math.sin(lon))).add(bz.clone().multiplyScalar(cl)).normalize();
+      const east = north.clone().cross(up);
+      // rows: x=north, y=east, z=up  →  lat=altitude, lon=azimuth (N→E)
+      this.gridAzSky.material.uniforms.uFrameFromScene.value.set(
+        north.x, north.y, north.z, east.x, east.y, east.z, up.x, up.y, up.z);
+      const R = 3.1e7;
+      this.cardinals[0].worldPos.copy(camPos).addScaledVector(north, R);
+      this.cardinals[1].worldPos.copy(camPos).addScaledVector(east, R);
+      this.cardinals[2].worldPos.copy(camPos).addScaledVector(north, -R);
+      this.cardinals[3].worldPos.copy(camPos).addScaledVector(east, -R);
+    }
+    for (const c of this.cardinals) {
+      const ov = this.overlayItems.get(c.key);
+      ov.want = azOn;
+      ov.worldPos = c.worldPos;
     }
 
     // -- Lagrange points --
@@ -585,12 +679,17 @@ export class SceneManager {
       const ov = this.overlayItems.get(it.key);
       place(it.key, ov.worldPos || new THREE.Vector3(), !!ov.want, false);
     }
+    for (const c of this.cardinals) {
+      const ov = this.overlayItems.get(c.key);
+      place(c.key, ov.worldPos || new THREE.Vector3(), !!ov.want, false);
+    }
   }
 }
 
 // ============================ helpers =============================
 
-const POINTS_PER_ORBIT = 360;
+const RAW_ORBIT_SAMPLES = 300;
+const POINTS_PER_ORBIT = 1200;
 
 function currentPeriod(eph, b, ut) {
   const ov = eph.overrides.get(b.id);
@@ -678,42 +777,25 @@ function updateRingGeometryRatio(mesh, ratio) {
   geo.userData.ratio = ratio;
 }
 
-function makeSkyGrid(color, tiers) {
-  const group = new THREE.Group();
-  // grid built in a frame where +Z is the pole; caller orients via quaternion
-  for (const tier of tiers) {
-    const sub = new THREE.Group();
-    sub.name = tier.name;
-    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: tier.opacity, depthWrite: false });
-    for (let decDeg = -90 + tier.decStep; decDeg <= 90 - tier.decStep + 1e-9; decDeg += tier.decStep) {
-      const pts = [];
-      const cd = Math.cos(decDeg * DEG), sd = Math.sin(decDeg * DEG);
-      for (let k = 0; k <= 180; k++) {
-        const ra = k / 180 * 2 * Math.PI;
-        pts.push(new THREE.Vector3(cd * Math.cos(ra), cd * Math.sin(ra), sd));
-      }
-      sub.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
-    }
-    for (let raDeg = 0; raDeg < 360; raDeg += tier.raStep) {
-      const pts = [];
-      for (let k = 0; k <= 72; k++) {
-        const dec = (-88 + k / 72 * 176) * DEG;
-        pts.push(new THREE.Vector3(Math.cos(dec) * Math.cos(raDeg * DEG), Math.cos(dec) * Math.sin(raDeg * DEG), Math.sin(dec)));
-      }
-      sub.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
-    }
-    group.add(sub);
-  }
-  group.renderOrder = -50;
-  return group;
+function setMatrix3(target, m) {
+  target.set(m[0][0], m[0][1], m[0][2], m[1][0], m[1][1], m[1][2], m[2][0], m[2][1], m[2][2]);
 }
 
-function m3ToMatrix4(m) {
-  return new THREE.Matrix4().set(
-    m[0][0], m[0][1], m[0][2], 0,
-    m[1][0], m[1][1], m[1][2], 0,
-    m[2][0], m[2][1], m[2][2], 0,
-    0, 0, 0, 1);
+// approximate B-V color index -> linear RGB (star colors)
+const BV_STOPS = [
+  [-0.33, 0.61, 0.70, 1.00], [0.0, 0.79, 0.84, 1.00], [0.3, 1.00, 0.96, 0.92],
+  [0.58, 1.00, 0.90, 0.81], [0.81, 1.00, 0.85, 0.70], [1.4, 1.00, 0.78, 0.56], [2.0, 1.00, 0.65, 0.32],
+];
+function bvToRGB(bv) {
+  const x = Math.max(-0.33, Math.min(2.0, bv));
+  for (let i = 0; i < BV_STOPS.length - 1; i++) {
+    const a = BV_STOPS[i], b = BV_STOPS[i + 1];
+    if (x <= b[0]) {
+      const t = (x - a[0]) / (b[0] - a[0]);
+      return [a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t];
+    }
+  }
+  return [1, 0.65, 0.32];
 }
 
 // CR3BP collinear + triangular Lagrange points from actual instantaneous

@@ -365,6 +365,120 @@ export function makeBeltMaterial(colorA, colorB, opacity, size) {
   });
 }
 
+// ---- procedural sky grid: fragment-shader lines, infinitely smooth ----
+// Lines are drawn analytically per-fragment with fwidth() anti-aliasing, so
+// the grid never shows polyline corners at any zoom. JS picks the angular
+// step from a ladder as the FOV narrows (Stellarium-style subdivision);
+// major lines are the next-coarser ladder step. The frame (equatorial,
+// ecliptic or horizontal/azimuthal) is a mat3 uniform.
+export function makeSkyGridShaderMaterial(color, opacity) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uFrameFromScene: { value: new THREE.Matrix3() },
+      uStepMinor: { value: 10 * Math.PI / 180 },
+      uStepMajor: { value: 30 * Math.PI / 180 },
+      uColor: { value: new THREE.Color(color) },
+      uOpacity: { value: opacity },
+    },
+    vertexShader: /* glsl */`
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
+      varying vec3 vDir;
+      void main() {
+        vDir = position;
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * viewMatrix * wp;
+        gl_Position.z = gl_Position.w * 0.999998;
+        #include <logdepthbuf_vertex>
+      }
+    `,
+    fragmentShader: /* glsl */`
+      #include <common>
+      #include <logdepthbuf_pars_fragment>
+      uniform mat3 uFrameFromScene;
+      uniform float uStepMinor;
+      uniform float uStepMajor;
+      uniform vec3 uColor;
+      uniform float uOpacity;
+      varying vec3 vDir;
+
+      float gridLine(float coord, float step) {
+        float c = coord / step;
+        float g = abs(fract(c - 0.5) - 0.5) / fwidth(c);
+        return 1.0 - min(g / 1.1, 1.0);
+      }
+
+      void main() {
+        #include <logdepthbuf_fragment>
+        vec3 d = normalize(uFrameFromScene * normalize(vDir));
+        float lat = asin(clamp(d.z, -1.0, 1.0));
+        float lon = atan(d.y, d.x);
+        // fade meridian lines near the poles where they converge
+        float poleFade = smoothstep(0.0, 0.03, 1.5707963 - abs(lat));
+        float minor = max(gridLine(lat, uStepMinor), gridLine(lon, uStepMinor) * poleFade);
+        float major = max(gridLine(lat, uStepMajor), gridLine(lon, uStepMajor) * poleFade);
+        // emphasized fundamental circle (equator / ecliptic / horizon)
+        float eq = 1.0 - min(abs(lat) / (fwidth(lat) * 1.6), 1.0);
+        float a = uOpacity * (0.4 * minor + 0.75 * major + 1.0 * eq);
+        if (a < 0.004) discard;
+        gl_FragColor = vec4(uColor, min(a, 0.95));
+        #include <colorspace_fragment>
+      }
+    `,
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+  });
+}
+
+// ---- catalog star points: sharp at any FOV (no texture pixels) ----
+export function makeStarPointsMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uBrightness: { value: 1.0 },
+      uZoomBoost: { value: 1.0 },   // grows as FOV narrows
+    },
+    vertexShader: /* glsl */`
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
+      attribute float aMag;
+      attribute vec3 aColor;
+      uniform float uZoomBoost;
+      varying vec3 vColor;
+      varying float vAlpha;
+      void main() {
+        vColor = aColor;
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * viewMatrix * wp;
+        gl_Position.z = gl_Position.w * 0.999997;
+        float size = pow(1.42, 1.4 - aMag) * 3.0 * uZoomBoost;
+        gl_PointSize = clamp(size, 1.1, 24.0);
+        vAlpha = clamp(1.3 - 0.12 * aMag, 0.35, 1.0);
+        #include <logdepthbuf_vertex>
+      }
+    `,
+    fragmentShader: /* glsl */`
+      #include <common>
+      #include <logdepthbuf_pars_fragment>
+      uniform float uBrightness;
+      varying vec3 vColor;
+      varying float vAlpha;
+      void main() {
+        #include <logdepthbuf_fragment>
+        vec2 c = gl_PointCoord - 0.5;
+        float r2 = dot(c, c) * 4.0;
+        if (r2 > 1.0) discard;
+        float core = smoothstep(1.0, 0.0, r2);
+        gl_FragColor = vec4(vColor * uBrightness, vAlpha * core * uBrightness);
+        #include <colorspace_fragment>
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+}
+
 // ---- sky sphere: NASA Tycho star map sampled by direction (EQJ frame) ----
 export function makeSkyMaterial(tex) {
   return new THREE.ShaderMaterial({

@@ -59,6 +59,11 @@
         <button id="btnClearTrace">clear</button>
       </div>
       <div class="dim">run time forward while tracking a planet to draw its retrograde loop</div>
+      <div class="row" title="Observe from a point on the surface instead of the body center (topocentric parallax; also anchors the azimuthal grid)">
+        <label><input type="checkbox" id="siteOn"> surface site</label>
+        <label>lat</label><input id="siteLat" class="short" type="number" step="0.1" value="0">
+        <label>lon</label><input id="siteLon" class="short" type="number" step="0.1" value="0">
+      </div>
       <div class="row dim" id="viewReadout"></div>
     </div>
   </details>
@@ -92,6 +97,7 @@
       <label><input type="checkbox" id="tGridPlane"> ecliptic grid</label>
       <label><input type="checkbox" id="tGridEq"> equatorial sky grid</label>
       <label><input type="checkbox" id="tGridEcl"> ecliptic sky grid</label>
+      <label title="Local horizon grid (from-body mode, anchored at the surface site)"><input type="checkbox" id="tGridAz"> azimuthal grid</label>
       <label><input type="checkbox" id="tCones"> shadow cones</label>
       <label><input type="checkbox" id="tLagrange"> Lagrange points</label>
       <label><input type="checkbox" id="tLightTime"> light-time delay</label>
@@ -150,7 +156,8 @@
   <details>
     <summary>Events</summary>
     <div class="row quickrow">
-      <button class="evbtn" data-ev="solar">☀ solar eclipse</button>
+      <button class="evbtn" data-ev="solar-total">☀ total eclipse</button>
+      <button class="evbtn" data-ev="solar-annular">◎ annular eclipse</button>
       <button class="evbtn" data-ev="lunar">☾ lunar eclipse</button>
       <button class="evbtn" data-ev="transit-mercury">Mercury transit</button>
       <button class="evbtn" data-ev="transit-venus">Venus transit</button>

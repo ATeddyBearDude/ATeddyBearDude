@@ -125,6 +125,21 @@ export class UI {
       if (this._lookBtns) for (const [bid, btn] of this._lookBtns) btn.classList.toggle('active', bid === id);
     };
 
+    // observer site (topocentric offset + azimuthal-grid anchor)
+    const applySite = () => {
+      if ($('siteOn').checked) {
+        app.rig.look.site = { latDeg: clamp(+$('siteLat').value || 0, -90, 90), lonDeg: +$('siteLon').value || 0 };
+      } else {
+        app.rig.look.site = null;
+      }
+    };
+    for (const el of ['siteOn', 'siteLat', 'siteLon']) $(el).addEventListener('change', applySite);
+    this.syncSiteInputs = () => {
+      const s = app.rig.look.site;
+      $('siteOn').checked = !!s;
+      if (s) { $('siteLat').value = s.latDeg.toFixed(1); $('siteLon').value = s.lonDeg.toFixed(1); }
+    };
+
     // mobile panel toggles
     $('togLeft').addEventListener('click', () => {
       $('leftpanel').classList.toggle('open');
@@ -156,7 +171,7 @@ export class UI {
       tLabels: 'labels', tMarkers: 'markers', tOrbP: 'orbitsPlanets', tOrbM: 'orbitsMoons',
       tOrbD: 'orbitsDwarfs', tBelts: 'belts', tRings: 'rings', tAtmos: 'atmos',
       tEclipse: 'eclipseShading', tGridPlane: 'gridEclPlane', tGridEq: 'gridEqSky',
-      tGridEcl: 'gridEclSky', tCones: 'shadowCones', tLagrange: 'lagrange',
+      tGridEcl: 'gridEclSky', tGridAz: 'gridAzSky', tCones: 'shadowCones', tLagrange: 'lagrange',
       tLightTime: 'lightTime', tTrace: 'trace',
     };
     for (const [el, key] of Object.entries(tmap)) {
@@ -315,8 +330,10 @@ export class UI {
       while (out.children.length > 5) out.removeChild(out.lastChild);
     };
     try {
-      if (kind === 'solar') {
-        const e = A.SearchGlobalSolarEclipse(t0);
+      if (kind === 'solar-total' || kind === 'solar-annular') {
+        const want = kind === 'solar-annular' ? 'annular' : 'total';
+        let e = A.SearchGlobalSolarEclipse(t0);
+        for (let i = 0; i < 100 && e.kind !== want; i++) e = A.NextGlobalSolarEclipse(e.peak);
         show(`${e.kind} solar eclipse`, e.peak,
           `— greatest at ${e.latitude?.toFixed(1)}°, ${e.longitude?.toFixed(1)}° (obsc ${(e.obscuration * 100 || 0).toFixed(0)}%)`,
           () => {
@@ -330,10 +347,11 @@ export class UI {
             $('scaleValue').textContent = '×1';
             this.setMode('center');
             this.setLookAt('sun');
-            // totality is topocentric: view from the point of greatest
-            // eclipse, riding Earth's rotation (from Earth's center a
-            // high-gamma eclipse looks like a near miss)
+            // totality/annularity is topocentric: view from the point of
+            // greatest eclipse, riding Earth's rotation (from Earth's
+            // center a high-gamma eclipse looks like a near miss)
             app.rig.look.site = { latDeg: e.latitude ?? 0, lonDeg: e.longitude ?? 0 };
+            this.syncSiteInputs();
             app.rig.look.fov = 3;
             app.clock.paused = true;
             this._syncTimeButtons();
@@ -489,6 +507,18 @@ export class UI {
     const vel = app.eph.velKmS(id, app.clock.ut);
     const lt = snap.lightTimeSec?.get(id) ?? dist / 299792.458;
 
+    // selected body is the one we're viewing from: most readouts undefined
+    if (app.rig.mode === 'center' && id === app.rig.targetId) {
+      $('infoTable').innerHTML = [
+        ['viewpoint', 'you are at this body'],
+        ['distance from Sun', b.type === 'star' ? '—' : fmtDistance(sunDist)],
+        ['radius', (b.equatorialRadiusKm || b.radiusKm).toLocaleString('en-US') + ' km'],
+        ['orbital period', b.orbitPeriodD ? fmtPeriod(b.orbitPeriodD) : '—'],
+        ['heliocentric speed', V.len(vel).toFixed(2) + ' km/s'],
+      ].map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('');
+      $('axisTable').innerHTML = '';
+      return;
+    }
     const rows = [
       ['distance from viewpoint', fmtDistance(dist)],
       ['light travel time', lt >= 60 ? (lt / 60).toFixed(2) + ' min' : lt.toFixed(2) + ' s'],
