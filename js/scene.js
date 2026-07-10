@@ -53,7 +53,7 @@ export class SceneManager {
     this.onSelect = onSelect;
     this.entries = {};
     this.overlayItems = new Map();
-    this.sphereGeo = new THREE.SphereGeometry(1, 72, 36);
+    this.sphereGeo = new THREE.SphereGeometry(1, 96, 48);
     this._buildBodies();
     this._buildSky();
     this._buildStars();
@@ -292,15 +292,22 @@ export class SceneManager {
       const o = this.orbits[id];
       const period = o.period || 365;
       const pos = o.line.geometry.attributes.position.array;
-      // sample the ephemeris coarsely, then Catmull-Rom to 4x density —
-      // smooth curves without 4x the (expensive) ephemeris evaluations
+      // Phase-stable sampling: sample times sit on a fixed absolute grid
+      // (multiples of period/RAW), so a refresh shifts WHICH grid points are
+      // included but never moves an existing point — the drawn curve can't
+      // "glitch" when it re-samples while you're zoomed in on it.
+      // Then Catmull-Rom to 4x density for smoothness.
+      const gridStep = period / RAW_ORBIT_SAMPLES;
+      const tEnd = Math.ceil(ut / gridStep) * gridStep;
       const raw = [];
       for (let k = 0; k < RAW_ORBIT_SAMPLES; k++) {
-        const t = ut - period + (k / (RAW_ORBIT_SAMPLES - 1)) * period;
+        const t = tEnd - period + (k + 1) * gridStep;
         const rel = V.sub(eph.posOfAt(id, t), eph.posOfAt(b.parent, t));
         raw.push(new THREE.Vector3(rel[0] / KM_PER_UNIT, rel[2] / KM_PER_UNIT, -rel[1] / KM_PER_UNIT));
       }
-      const curve = new THREE.CatmullRomCurve3(raw, false, 'centripetal');
+      // uniform parameterization: output vertices stay aligned with the
+      // (grid-stable) control points across refreshes — no sub-pixel shimmer
+      const curve = new THREE.CatmullRomCurve3(raw, false, 'catmullrom');
       const smooth = curve.getPoints(POINTS_PER_ORBIT - 1);
       for (let k = 0; k < POINTS_PER_ORBIT; k++) {
         pos[k * 3] = smooth[k].x; pos[k * 3 + 1] = smooth[k].y; pos[k * 3 + 2] = smooth[k].z;
@@ -348,8 +355,9 @@ export class SceneManager {
   // ---------------- apparent path trace ----------------
   _buildTrace() {
     this.traceGeo = new THREE.BufferGeometry();
-    this.traceMax = 12000;
-    this.traceGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.traceMax * 3), 3));
+    this.traceMax = 12000;                 // recorded samples
+    this.traceDrawMax = 30000;             // spline-subdivided render points
+    this.traceGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.traceDrawMax * 3), 3));
     this.traceLine = new THREE.Line(this.traceGeo, new THREE.LineBasicMaterial({ color: 0xffcc44, transparent: true, opacity: 0.9 }));
     this.traceLine.frustumCulled = false;
     this.traceDirs = [];
@@ -501,13 +509,13 @@ export class SceneManager {
       this.starPoints.visible = opts.skyBrightness > 0.01;
       const u = this.starPoints.material.uniforms;
       u.uBrightness.value = Math.min(1.5, opts.skyBrightness);
-      u.uZoomBoost.value = Math.min(7, Math.max(1, Math.pow(50 / fovNow, 0.42)));
+      u.uZoomBoost.value = Math.min(12, Math.max(1, Math.pow(50 / fovNow, 0.42)));
     }
     this.gridEclPlane.visible = !!opts.gridEclPlane;
     this.gridEclPlane.position.copy(sunScene);
     // adaptive grid step: pick from a ladder so ~4-10 lines cross the view;
     // the shader draws minor + (5x brighter) major + fundamental circle
-    const LADDER = [30, 10, 5, 2, 1, 0.5, 0.25, 0.1, 0.05, 0.02, 0.01];
+    const LADDER = [30, 10, 5, 2, 1, 0.5, 0.25, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001, 0.0005];
     let li = LADDER.findIndex(s => fovNow / s >= 3.2);
     if (li < 0) li = LADDER.length - 1;
     const stepMinor = LADDER[li] * DEG;
@@ -578,15 +586,34 @@ export class SceneManager {
       }
     }
 
-    // -- trace --
-    if (this.traceDirs.length > 1) {
+    // -- trace: render through a spherical Catmull-Rom spline so the path
+    // is a smooth curve, not visible chords (subdivision adapts to budget)
+    const nT = this.traceDirs.length;
+    if (nT > 1) {
       const arr = this.traceGeo.attributes.position.array;
       const R = 2.0e7;
-      for (let i = 0; i < this.traceDirs.length; i++) {
-        const p = this._tmpV.copy(this.traceDirs[i]).multiplyScalar(R).add(camPos);
-        arr[i * 3] = p.x; arr[i * 3 + 1] = p.y; arr[i * 3 + 2] = p.z;
+      const sub = Math.max(1, Math.min(6, Math.floor(this.traceDrawMax / nT) - 1));
+      const D = this.traceDirs;
+      let w = 0;
+      const put = v => {
+        const l = R / Math.hypot(v.x, v.y, v.z);
+        arr[w * 3] = v.x * l + camPos.x; arr[w * 3 + 1] = v.y * l + camPos.y; arr[w * 3 + 2] = v.z * l + camPos.z;
+        w++;
+      };
+      const tmp = this._tmpV;
+      for (let i = 0; i < nT - 1; i++) {
+        const p0 = D[Math.max(0, i - 1)], p1 = D[i], p2 = D[i + 1], p3 = D[Math.min(nT - 1, i + 2)];
+        for (let s = 0; s < sub; s++) {
+          const t = s / sub, t2 = t * t, t3 = t2 * t;
+          tmp.set(
+            0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+            0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+            0.5 * (2 * p1.z + (-p0.z + p2.z) * t + (2 * p0.z - 5 * p1.z + 4 * p2.z - p3.z) * t2 + (-p0.z + 3 * p1.z - 3 * p2.z + p3.z) * t3));
+          put(tmp);
+        }
       }
-      this.traceGeo.setDrawRange(0, this.traceDirs.length);
+      put(tmp.copy(D[nT - 1]));
+      this.traceGeo.setDrawRange(0, w);
       this.traceGeo.attributes.position.needsUpdate = true;
       this.traceLine.visible = true;
     } else this.traceLine.visible = false;
@@ -669,9 +696,11 @@ export class SceneManager {
           if (dx * dx + dy * dy < 26 * 26) show = false;
         }
       }
-      // hide label when body fills a good part of the screen
+      // hide label when the body fills a good part of the view (either by
+      // proximity or by telescope magnification)
       const dist = camera.position.distanceTo(scenePos[b.id]);
-      if (dist < e.displayedRadius * 4) show = opts.labels && b.id === selection ? show : false;
+      const angFrac = 2 * Math.atan2(e.displayedRadius, Math.max(dist, 1e-12)) / (camera.fov * DEG);
+      if (dist < e.displayedRadius * 4 || angFrac > 0.35) show = opts.labels && b.id === selection && angFrac <= 0.35 ? show : false;
       const sp = place(b.id, scenePos[b.id], show, b.id === selection);
       if (sp && (b.type === 'planet' || b.type === 'star' || b.type === 'dwarf')) parentScreen[b.id] = sp;
     }
@@ -689,7 +718,9 @@ export class SceneManager {
 // ============================ helpers =============================
 
 const RAW_ORBIT_SAMPLES = 300;
-const POINTS_PER_ORBIT = 1200;
+// exactly 4 spline outputs per raw segment, so output vertices coincide
+// with control points and stay identical across grid-shifted refreshes
+const POINTS_PER_ORBIT = (RAW_ORBIT_SAMPLES - 1) * 4 + 1;
 
 function currentPeriod(eph, b, ut) {
   const ov = eph.overrides.get(b.id);

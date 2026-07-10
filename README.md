@@ -166,7 +166,12 @@ Two layers, so zooming never hits texture pixels:
   The map fades out as the FOV narrows below ~10°.
 - **~10 000 real catalog stars** (HYG, mag ≤ 6.6) as sharp shader points
   with B−V colors and magnitude-scaled sizes — these carry the deep-zoom
-  sky, Stellarium-style, down to the 0.02° FOV floor.
+  sky, Stellarium-style, down to the **0.0015° (5.4″) FOV floor** — deep
+  enough to resolve Pluto's 0.1″ disk from the Sun. During deep tracked
+  zoom the floating origin moves to the *tracked* body, so float32
+  quantization cannot make the target jitter, and orbit lines use
+  phase-stable grid sampling (refreshes are bit-identical on overlapping
+  arcs — verified in tests).
 
 Sky grids (equatorial, ecliptic, and a new **azimuthal/horizon grid** with
 N/E/S/W cardinal labels, anchored to the observer site) are drawn

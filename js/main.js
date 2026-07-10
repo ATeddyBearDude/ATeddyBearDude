@@ -221,15 +221,20 @@ class App {
         this.sceneMgr.pushTraceSample(dirNow);
         this._lastTraceDir = dirNow.clone();
         this._lastTraceUt = this.clock.ut;
+        this._lastPushUt = this.clock.ut;
       } else if (this.clock.ut !== this._lastTraceUt) {
+        const dt = this.clock.ut - this._lastTraceUt;
         const jump = this._lastTraceDir.angleTo(dirNow);
-        const n = Math.min(24, Math.max(1, Math.ceil(jump / THR)));
+        // subdivide by BOTH apparent motion and elapsed time: retrograde
+        // cusps move slowly but curve sharply, so they need time samples
+        const n = Math.min(32, Math.max(1, Math.ceil(jump / THR), Math.ceil(Math.abs(dt) / 1.0)));
         for (let k = 1; k <= n; k++) {
-          const t = this._lastTraceUt + (this.clock.ut - this._lastTraceUt) * k / n;
+          const t = this._lastTraceUt + dt * k / n;
           const d = k === n ? dirNow : dirAt(t);
-          if (this._lastTraceDir.angleTo(d) > THR) {
+          if (this._lastTraceDir.angleTo(d) > THR || Math.abs(t - this._lastPushUt) > 1.5) {
             this.sceneMgr.pushTraceSample(d);
             this._lastTraceDir = d.clone();
+            this._lastPushUt = t;
           }
         }
         this._lastTraceUt = this.clock.ut;

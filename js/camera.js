@@ -104,7 +104,7 @@ export class CameraRig {
       this.camera.lookAt(0, 0, 0);
       this.camera.fov = this.orbitFov;
     } else if (this.mode === 'center') {
-      focusKm = targetPos;
+      let obsKm = targetPos;
       if (this.look.site) {
         const m = snap.orient.get(this.targetId);
         const lat = this.look.site.latDeg * DEG, lon = this.look.site.lonDeg * DEG;
@@ -115,16 +115,27 @@ export class CameraRig {
           m[1][0] * local[0] + m[1][1] * local[1] + m[1][2] * local[2],
           m[2][0] * local[0] + m[2][1] * local[1] + m[2][2] * local[2],
         ];
-        focusKm = V.add(targetPos, V.scale(upEcl, radU * KM_PER_UNIT));
+        obsKm = V.add(targetPos, V.scale(upEcl, radU * KM_PER_UNIT));
       }
-      if (this.look.trackId && this.look.trackId !== this.targetId) {
-        this.aimAt(this.look.trackId, snap, focusKm);
+      const tracking = this.look.trackId && this.look.trackId !== this.targetId;
+      if (tracking) this.aimAt(this.look.trackId, snap, obsKm);
+      // Deep telescope zoom: move the floating origin to the TRACKED body
+      // so its float32 scene coordinates are ~0 and it renders rock-steady;
+      // the camera sits at the (large) observer offset instead. A uniform
+      // translation quantization shifts the whole view sub-pixel — nothing
+      // jitters relative to anything else.
+      if (tracking && this.look.fov < 0.6) {
+        focusKm = snap.pos.get(this.look.trackId);
+        const rel = V.sub(obsKm, focusKm);
+        this.camera.position.set(rel[0] / KM_PER_UNIT, rel[2] / KM_PER_UNIT, -rel[1] / KM_PER_UNIT);
+      } else {
+        focusKm = obsKm;
+        this.camera.position.set(0, 0, 0);
       }
       const y = this.look.yawDeg * DEG, p = this.look.pitchDeg * DEG;
       const dir = new THREE.Vector3(Math.cos(p) * Math.cos(y), Math.sin(p), Math.cos(p) * Math.sin(y));
-      this.camera.position.set(0, 0, 0);
       this.camera.up.set(0, 1, 0);
-      this.camera.lookAt(dir);
+      this.camera.lookAt(dir.add(this.camera.position));
       this.camera.fov = this.look.fov;
     } else {
       // free roam
@@ -154,8 +165,10 @@ export class CameraRig {
     // near/far
     let nearApproach;
     if (this.mode === 'orbit') nearApproach = Math.max((this.distU - radU) * 0.02, 2e-9);
-    else if (this.mode === 'center') nearApproach = Math.max(radU * 0.5, 1e-6);
-    else nearApproach = Math.max(this._nearestSurfaceU(snap, entries) * 0.05, 2e-9);
+    else if (this.mode === 'center') {
+      const camDist = this.camera.position.length();
+      nearApproach = camDist > 0 ? Math.max(camDist * 1e-4, 1e-6) : Math.max(radU * 0.5, 1e-6);
+    } else nearApproach = Math.max(this._nearestSurfaceU(snap, entries) * 0.05, 2e-9);
     this.camera.near = clamp(nearApproach, 2e-9, 50);
     this.camera.far = 1.2e8;
     this.camera.updateProjectionMatrix();
@@ -204,7 +217,7 @@ export class CameraRig {
   // ---- input --------------------------------------------------------------
   _zoom(deltaFactor) {
     if (this.mode === 'orbit') this.distU *= deltaFactor;
-    else if (this.mode === 'center') this.look.fov = clamp(this.look.fov * deltaFactor, 0.02, 110);
+    else if (this.mode === 'center') this.look.fov = clamp(this.look.fov * deltaFactor, 0.0015, 110);
     // free roam: dolly proportionally to the gesture, so a slow pinch is a
     // slow glide (a fixed step per event made pinch far too sensitive);
     // tuned so one full pinch ≈ 1× the distance to the nearest body

@@ -425,14 +425,14 @@ export class UI {
       const kmPerPx = (app.rig.distU * KM_PER_UNIT * 2 * Math.tan(app.rig.camera.fov * DEG / 2)) / app.renderer.domElement.clientHeight;
       $('statusRef').textContent = `1 px ≈ ${fmtDistance(kmPerPx)} at target`;
     } else if (app.rig.mode === 'center') {
-      $('statusRef').textContent = `FOV ${app.rig.look.fov.toFixed(2)}°`;
+      $('statusRef').textContent = `FOV ${fmtFov(app.rig.look.fov)}`;
       // look direction as RA/Dec
       const y = app.rig.look.yawDeg * DEG, p = app.rig.look.pitchDeg * DEG;
       const dirScene = [Math.cos(p) * Math.cos(y), Math.sin(p), Math.cos(p) * Math.sin(y)];
       const dirEqj = eclToEqj([dirScene[0], -dirScene[2], dirScene[1]]);
       const ra = ((Math.atan2(dirEqj[1], dirEqj[0]) / DEG / 15) + 24) % 24;
       const dec = Math.asin(clamp(dirEqj[2], -1, 1)) / DEG;
-      $('viewReadout').textContent = `looking at RA ${ra.toFixed(2)}h / Dec ${dec.toFixed(1)}° · FOV ${app.rig.look.fov.toFixed(2)}°` +
+      $('viewReadout').textContent = `looking at RA ${ra.toFixed(2)}h / Dec ${dec.toFixed(1)}° · FOV ${fmtFov(app.rig.look.fov)}` +
         (app.rig.look.trackId ? ` · tracking ${BODY_BY_ID[app.rig.look.trackId].name}` : '');
     } else {
       const nid = app.rig._nearestId;
@@ -568,6 +568,12 @@ export class UI {
       [`you → ${BODY_BY_ID[bId].name}`, fmtDistance(V.len(db))],
     ].map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('');
   }
+}
+
+function fmtFov(f) {
+  if (f >= 1) return f.toFixed(2) + '°';
+  if (f >= 1 / 60) return (f * 60).toFixed(2) + '′';
+  return (f * 3600).toFixed(1) + '″';
 }
 
 function fmtPeriod(d) {
