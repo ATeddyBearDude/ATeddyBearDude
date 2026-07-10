@@ -1,7 +1,7 @@
 // App bootstrap + frame loop.
 
 import * as THREE from '../vendor/three.module.js';
-import { KM_PER_UNIT } from './const.js';
+import { KM_PER_UNIT, DEG } from './const.js';
 import { BODY_BY_ID, BODIES } from './catalog.js';
 import { V } from './kepler.js';
 import { Ephemeris } from './ephemeris.js';
@@ -214,7 +214,10 @@ class App {
         const body = this.eph.posOfAt(traceTarget, t);
         return sceneFromEclKm(body, obs).normalize();
       };
-      const THR = 0.001;
+      // sample density follows the current zoom: tighter threshold when the
+      // user is zoomed in, so the recorded path is smooth at that scale
+      const THR = Math.max(2e-6, Math.min(1e-3, this.rig.camera.fov * DEG / 700));
+      this.sceneMgr.traceSampleAng = THR;
       const dirNow = sceneFromEclKm(snap.pos.get(traceTarget), focusKm)
         .sub(this.rig.camera.position).normalize();
       if (this._lastTraceDir === null || this._lastTraceUt === null) {
@@ -227,7 +230,7 @@ class App {
         const jump = this._lastTraceDir.angleTo(dirNow);
         // subdivide by BOTH apparent motion and elapsed time: retrograde
         // cusps move slowly but curve sharply, so they need time samples
-        const n = Math.min(32, Math.max(1, Math.ceil(jump / THR), Math.ceil(Math.abs(dt) / 1.0)));
+        const n = Math.min(64, Math.max(1, Math.ceil(jump / THR), Math.ceil(Math.abs(dt) / 1.0)));
         for (let k = 1; k <= n; k++) {
           const t = this._lastTraceUt + dt * k / n;
           const d = k === n ? dirNow : dirAt(t);

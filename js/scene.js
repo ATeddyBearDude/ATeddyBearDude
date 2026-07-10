@@ -279,12 +279,24 @@ export class SceneManager {
     for (const b of BODIES) {
       if (!b.parent) continue;
       const o = this.orbits[b.id];
+      if (!o.line.visible && !o.dirty) continue;   // don't refresh hidden lines
       const period = currentPeriod(eph, b, ut);
       o.period = period;
-      if (o.cachedUt === null || Math.abs(ut - o.cachedUt) > period * 0.02 || o.dirty) {
+      // Keplerian-source loops only change shape via slow node/apsis
+      // precession — refresh them rarely; analytic (VSOP/ELP/E5) orbits
+      // carry real perturbation wiggles and refresh more often
+      const staleFrac = b.ephem.source === 'kepler' ? 0.5 : 0.05;
+      if (o.cachedUt === null || Math.abs(ut - o.cachedUt) > period * staleFrac || o.dirty) {
         if (!this._orbitQueue.includes(b.id)) this._orbitQueue.push(b.id);
       }
     }
+    // most-stale first, so fast moons don't starve behind slow planets
+    this._orbitQueue.sort((a, c) => {
+      const oa = this.orbits[a], oc = this.orbits[c];
+      const sa = oa.cachedUt === null ? 1e9 : Math.abs(ut - oa.cachedUt) / (oa.period || 1);
+      const sc = oc.cachedUt === null ? 1e9 : Math.abs(ut - oc.cachedUt) / (oc.period || 1);
+      return sc - sa;
+    });
     let budget = 3;
     while (budget-- > 0 && this._orbitQueue.length) {
       const id = this._orbitQueue.shift();
@@ -292,11 +304,12 @@ export class SceneManager {
       const o = this.orbits[id];
       const period = o.period || 365;
       const pos = o.line.geometry.attributes.position.array;
-      // Phase-stable sampling: sample times sit on a fixed absolute grid
-      // (multiples of period/RAW), so a refresh shifts WHICH grid points are
-      // included but never moves an existing point — the drawn curve can't
-      // "glitch" when it re-samples while you're zoomed in on it.
-      // Then Catmull-Rom to 4x density for smoothness.
+      // Phase-stable CLOSED-loop sampling: times sit on a fixed absolute
+      // grid (multiples of period/RAW) and the spline is closed, so
+      //  (a) a refresh never moves an existing point (no popping), and
+      //  (b) there is no trailing endpoint that the body can outrun at high
+      //      time rates — the old open-ended window left a moving gap in
+      //      the ellipse right where the body is.
       const gridStep = period / RAW_ORBIT_SAMPLES;
       const tEnd = Math.ceil(ut / gridStep) * gridStep;
       const raw = [];
@@ -305,9 +318,10 @@ export class SceneManager {
         const rel = V.sub(eph.posOfAt(id, t), eph.posOfAt(b.parent, t));
         raw.push(new THREE.Vector3(rel[0] / KM_PER_UNIT, rel[2] / KM_PER_UNIT, -rel[1] / KM_PER_UNIT));
       }
-      // uniform parameterization: output vertices stay aligned with the
-      // (grid-stable) control points across refreshes — no sub-pixel shimmer
-      const curve = new THREE.CatmullRomCurve3(raw, false, 'catmullrom');
+      // closed + uniform parameterization: outputs stay aligned with the
+      // grid-stable control points across refreshes, and the loop is
+      // seamless (the closure spans exactly one grid step of phase)
+      const curve = new THREE.CatmullRomCurve3(raw, true, 'catmullrom');
       const smooth = curve.getPoints(POINTS_PER_ORBIT - 1);
       for (let k = 0; k < POINTS_PER_ORBIT; k++) {
         pos[k * 3] = smooth[k].x; pos[k * 3 + 1] = smooth[k].y; pos[k * 3 + 2] = smooth[k].z;
@@ -592,7 +606,12 @@ export class SceneManager {
     if (nT > 1) {
       const arr = this.traceGeo.attributes.position.array;
       const R = 2.0e7;
-      const sub = Math.max(1, Math.min(6, Math.floor(this.traceDrawMax / nT) - 1));
+      // subdivide so each drawn chord is ~4px at the CURRENT zoom (capped
+      // by the buffer): the curve reads as a curve at any magnification
+      const sampleAng = this.traceSampleAng || 0.001;
+      const pxPerSample = (sampleAng / (camera.fov * DEG)) * (this.overlayEl.clientHeight || 800);
+      const subNeed = Math.max(2, Math.ceil(pxPerSample / 4));
+      const sub = Math.max(1, Math.min(subNeed, 48, Math.floor((this.traceDrawMax - 2) / Math.max(1, nT - 1))));
       const D = this.traceDirs;
       let w = 0;
       const put = v => {
@@ -718,9 +737,10 @@ export class SceneManager {
 // ============================ helpers =============================
 
 const RAW_ORBIT_SAMPLES = 300;
-// exactly 4 spline outputs per raw segment, so output vertices coincide
-// with control points and stay identical across grid-shifted refreshes
-const POINTS_PER_ORBIT = (RAW_ORBIT_SAMPLES - 1) * 4 + 1;
+// closed loop: RAW segments, exactly 4 spline outputs per segment (+1 wrap
+// point) so output vertices coincide with control points and stay identical
+// across grid-shifted refreshes
+const POINTS_PER_ORBIT = RAW_ORBIT_SAMPLES * 4 + 1;
 
 function currentPeriod(eph, b, ut) {
   const ov = eph.overrides.get(b.id);
