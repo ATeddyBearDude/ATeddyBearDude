@@ -285,19 +285,22 @@ export class SceneManager {
       // Keplerian-source loops only change shape via slow node/apsis
       // precession — refresh them rarely; analytic (VSOP/ELP/E5) orbits
       // carry real perturbation wiggles and refresh more often
-      const staleFrac = b.ephem.source === 'kepler' ? 0.5 : 0.05;
+      const staleFrac = b.ephem.source === 'kepler' ? 0.5 : 0.15;
       if (o.cachedUt === null || Math.abs(ut - o.cachedUt) > period * staleFrac || o.dirty) {
         if (!this._orbitQueue.includes(b.id)) this._orbitQueue.push(b.id);
       }
     }
-    // most-stale first, so fast moons don't starve behind slow planets
-    this._orbitQueue.sort((a, c) => {
-      const oa = this.orbits[a], oc = this.orbits[c];
-      const sa = oa.cachedUt === null ? 1e9 : Math.abs(ut - oa.cachedUt) / (oa.period || 1);
-      const sc = oc.cachedUt === null ? 1e9 : Math.abs(ut - oc.cachedUt) / (oc.period || 1);
-      return sc - sa;
-    });
-    let budget = 3;
+    // FIFO keeps the queue fair (a re-stale moon re-enters at the BACK, so
+    // slow planets are never starved); the body the user is watching jumps
+    // the queue so its line is always freshest
+    if (this._priorityBodyId) {
+      const i = this._orbitQueue.indexOf(this._priorityBodyId);
+      if (i > 0) {
+        this._orbitQueue.splice(i, 1);
+        this._orbitQueue.unshift(this._priorityBodyId);
+      }
+    }
+    let budget = 4;
     while (budget-- > 0 && this._orbitQueue.length) {
       const id = this._orbitQueue.shift();
       const b = BODY_BY_ID[id];
@@ -307,11 +310,15 @@ export class SceneManager {
       // Phase-stable CLOSED-loop sampling: times sit on a fixed absolute
       // grid (multiples of period/RAW) and the spline is closed, so
       //  (a) a refresh never moves an existing point (no popping), and
-      //  (b) there is no trailing endpoint that the body can outrun at high
-      //      time rates — the old open-ended window left a moving gap in
-      //      the ellipse right where the body is.
+      //  (b) there is no open endpoint the body can outrun.
+      // The window is CENTERED on the present (±half a period): the arc at
+      // the body's position is its freshly-computed near-future path, which
+      // it then follows exactly until the next refresh, and the closure
+      // seam (the only region that changes across refreshes, by one
+      // period's worth of perturbation drift) sits half an orbit away —
+      // never where a tracked planet is being watched.
       const gridStep = period / RAW_ORBIT_SAMPLES;
-      const tEnd = Math.ceil(ut / gridStep) * gridStep;
+      const tEnd = Math.ceil((ut + period / 2) / gridStep) * gridStep;
       const raw = [];
       for (let k = 0; k < RAW_ORBIT_SAMPLES; k++) {
         const t = tEnd - period + (k + 1) * gridStep;
@@ -381,7 +388,7 @@ export class SceneManager {
     if (this.traceDirs.length >= this.traceMax) this.traceDirs.shift();
     this.traceDirs.push(dirScene.clone());
   }
-  clearTrace() { this.traceDirs = []; }
+  clearTrace() { this.traceDirs = []; this.traceTip = null; }
   setTraceColor(cssColor) { this.traceLine.material.color.set(cssColor); }
 
   // =====================================================================
@@ -501,6 +508,7 @@ export class SceneManager {
       o.line.visible = showOrb(b.type) && !hide;
       if (o.line.visible) o.line.position.copy(scenePos[b.parent]);
     }
+    this._priorityBodyId = view.priorityBodyId || null;
     if (eph) this.refreshOrbits(eph, snap.ut);
 
     // -- belts --
@@ -602,7 +610,9 @@ export class SceneManager {
 
     // -- trace: render through a spherical Catmull-Rom spline so the path
     // is a smooth curve, not visible chords (subdivision adapts to budget)
-    const nT = this.traceDirs.length;
+    // live tip (current planet direction) is appended for drawing only
+    const D = (this.traceTip && this.traceDirs.length) ? [...this.traceDirs, this.traceTip] : this.traceDirs;
+    const nT = D.length;
     if (nT > 1) {
       const arr = this.traceGeo.attributes.position.array;
       const R = 2.0e7;
@@ -612,7 +622,6 @@ export class SceneManager {
       const pxPerSample = (sampleAng / (camera.fov * DEG)) * (this.overlayEl.clientHeight || 800);
       const subNeed = Math.max(2, Math.ceil(pxPerSample / 4));
       const sub = Math.max(1, Math.min(subNeed, 48, Math.floor((this.traceDrawMax - 2) / Math.max(1, nT - 1))));
-      const D = this.traceDirs;
       let w = 0;
       const put = v => {
         const l = R / Math.hypot(v.x, v.y, v.z);

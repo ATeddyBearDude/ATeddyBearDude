@@ -188,14 +188,11 @@ class App {
     }
 
     const focusKm = this.rig.update(snap, this.sceneMgr.entries, dtReal);
-    this.sceneMgr.update(snap, {
-      focusKm, camera: this.rig.camera, sizeScale: this.opts.sizeScale,
-      centerBodyId: this.rig.mode === 'center' ? this.rig.targetId : null,
-      site: this.rig.look.site,
-    }, this.opts, this.selection, this.eph);
 
     // apparent-path trace: only meaningful when tracking a body from
-    // another body's perspective (from-body mode + look-at engaged)
+    // another body's perspective (from-body mode + look-at engaged).
+    // Sampled BEFORE the scene draws this frame so the tip is never a
+    // frame behind the planet.
     const traceTarget = (this.rig.mode === 'center' && this.rig.look.trackId) ? this.rig.look.trackId : null;
     if (this.opts.trace && traceTarget) {
       if (this._traceOf !== traceTarget) {           // tracked body changed
@@ -242,13 +239,26 @@ class App {
         }
         this._lastTraceUt = this.clock.ut;
       }
-    } else if (this.sceneMgr.traceDirs.length && this.rig.mode !== 'center') {
-      // recording stops when tracking stops, but the drawn path persists in
-      // from-body mode (so you can unlock and admire the whole loop);
-      // leaving from-body mode erases it
-      this.sceneMgr.clearTrace();
-      this._traceOf = null;
+      // live tip: the drawn curve always ends exactly at the planet's
+      // current direction, even between threshold samples
+      this.sceneMgr.traceTip = dirNow;
+    } else {
+      this.sceneMgr.traceTip = null;
+      if (this.sceneMgr.traceDirs.length && this.rig.mode !== 'center') {
+        // recording stops when tracking stops, but the drawn path persists
+        // in from-body mode (so you can unlock and admire the whole loop);
+        // leaving from-body mode erases it
+        this.sceneMgr.clearTrace();
+        this._traceOf = null;
+      }
     }
+
+    this.sceneMgr.update(snap, {
+      focusKm, camera: this.rig.camera, sizeScale: this.opts.sizeScale,
+      centerBodyId: this.rig.mode === 'center' ? this.rig.targetId : null,
+      site: this.rig.look.site,
+      priorityBodyId: traceTarget || this.selection,
+    }, this.opts, this.selection, this.eph);
 
     this.renderer.render(this.sceneMgr.scene, this.rig.camera);
 
