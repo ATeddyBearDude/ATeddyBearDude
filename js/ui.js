@@ -132,6 +132,8 @@ export class UI {
       } else {
         app.rig.look.site = null;
       }
+      // geocentric and topocentric traces are different curves — restart
+      app.resetTrace();
     };
     for (const el of ['siteOn', 'siteLat', 'siteLon']) $(el).addEventListener('change', applySite);
     this.syncSiteInputs = () => {

@@ -96,11 +96,15 @@ class App {
     } else this.nbody.deactivate();
   }
 
-  onTimeJump() {
+  resetTrace() {
     this.sceneMgr.clearTrace();
     this._lastTraceDir = null;
     this._lastTraceUt = null;
     this._traceOf = null;
+  }
+
+  onTimeJump() {
+    this.resetTrace();
     if (this.nbody.active) this.nbody.activate(this.clock.ut);   // re-seed
   }
 
@@ -202,15 +206,29 @@ class App {
         this._lastTraceDir = null;
         this._lastTraceUt = null;
       }
-      // angular threshold sampling (~0.06° per point), with sub-frame
-      // interpolation: when one frame advances time so far that the body
-      // jumped several thresholds, intermediate ephemeris samples fill the
-      // gap — smooth loops at any time rate
-      const dirAt = t => {
-        const obs = this.eph.posOfAt(this.rig.targetId, t);
-        const body = this.eph.posOfAt(traceTarget, t);
-        return sceneFromEclKm(body, obs).normalize();
+      // angular threshold sampling with sub-frame interpolation: when one
+      // frame advances time so far that the body jumped several thresholds,
+      // intermediate ephemeris samples fill the gap — smooth at any rate.
+      // The observer MUST match the camera exactly: if a surface site is
+      // set, every sample is topocentric at its own time (mixing geocentric
+      // interpolation with topocentric frame samples once produced a
+      // sawtooth of daily-parallax offsets).
+      const site = this.rig.look.site;
+      const siteRadiusKm = (this.sceneMgr.entries[this.rig.targetId]?.displayedRadius || 0) * KM_PER_UNIT;
+      const obsAt = t => {
+        const c = this.eph.posOfAt(this.rig.targetId, t);
+        if (!site) return c;
+        const m = this.eph.orientationOf(this.rig.targetId, t);
+        const lat = site.latDeg * DEG, lon = site.lonDeg * DEG, cl = Math.cos(lat);
+        const l = [cl * Math.cos(lon), cl * Math.sin(lon), Math.sin(lat)];
+        const up = [
+          m[0][0] * l[0] + m[0][1] * l[1] + m[0][2] * l[2],
+          m[1][0] * l[0] + m[1][1] * l[1] + m[1][2] * l[2],
+          m[2][0] * l[0] + m[2][1] * l[1] + m[2][2] * l[2],
+        ];
+        return [c[0] + up[0] * siteRadiusKm, c[1] + up[1] * siteRadiusKm, c[2] + up[2] * siteRadiusKm];
       };
+      const dirAt = t => sceneFromEclKm(this.eph.posOfAt(traceTarget, t), obsAt(t)).normalize();
       // sample density follows the current zoom: tighter threshold when the
       // user is zoomed in, so the recorded path is smooth at that scale
       const THR = Math.max(2e-6, Math.min(1e-3, this.rig.camera.fov * DEG / 700));
@@ -226,12 +244,15 @@ class App {
         const dt = this.clock.ut - this._lastTraceUt;
         const jump = this._lastTraceDir.angleTo(dirNow);
         // subdivide by BOTH apparent motion and elapsed time: retrograde
-        // cusps move slowly but curve sharply, so they need time samples
-        const n = Math.min(64, Math.max(1, Math.ceil(jump / THR), Math.ceil(Math.abs(dt) / 1.0)));
+        // cusps move slowly but curve sharply, so they need time samples;
+        // a surface site adds a daily parallax cycle that must be resolved
+        // finely or it aliases into jagged teeth
+        const maxGapD = site ? 0.02 : 1.0;
+        const n = Math.min(64, Math.max(1, Math.ceil(jump / THR), Math.ceil(Math.abs(dt) / maxGapD)));
         for (let k = 1; k <= n; k++) {
           const t = this._lastTraceUt + dt * k / n;
           const d = k === n ? dirNow : dirAt(t);
-          if (this._lastTraceDir.angleTo(d) > THR || Math.abs(t - this._lastPushUt) > 1.5) {
+          if (this._lastTraceDir.angleTo(d) > THR || Math.abs(t - this._lastPushUt) > maxGapD * 1.5) {
             this.sceneMgr.pushTraceSample(d);
             this._lastTraceDir = d.clone();
             this._lastPushUt = t;
