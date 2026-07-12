@@ -377,6 +377,7 @@ export function makeSkyGridShaderMaterial(color, opacity) {
       uFrameFromScene: { value: new THREE.Matrix3() },
       uStepMinor: { value: 10 * Math.PI / 180 },
       uStepMajor: { value: 30 * Math.PI / 180 },
+      uPixAng: { value: 1e-3 },   // angular size of one pixel (rad), set per frame
       uColor: { value: new THREE.Color(color) },
       uOpacity: { value: opacity },
     },
@@ -398,27 +399,52 @@ export function makeSkyGridShaderMaterial(color, opacity) {
       uniform mat3 uFrameFromScene;
       uniform float uStepMinor;
       uniform float uStepMajor;
+      uniform float uPixAng;
       uniform vec3 uColor;
       uniform float uOpacity;
       varying vec3 vDir;
 
-      float gridLine(float coord, float step) {
-        float c = coord / step;
-        float g = abs(fract(c - 0.5) - 0.5) / fwidth(c);
-        return 1.0 - min(g / 1.1, 1.0);
+      // Analytic anti-aliasing: line width comes from the known angular
+      // pixel size, NOT from fwidth() — screen-space derivatives break in
+      // 2x2 quads that straddle step changes and dashed the polar rings.
+      float distToMult(float x, float s) {
+        return abs(x - s * floor(x / s + 0.5));
+      }
+      float lineAt(float distRad) {
+        return 1.0 - smoothstep(uPixAng * 0.6, uPixAng * 1.6, distRad);
       }
 
       void main() {
         #include <logdepthbuf_fragment>
         vec3 d = normalize(uFrameFromScene * normalize(vDir));
-        float lat = asin(clamp(d.z, -1.0, 1.0));
+        // atan2 form: well-conditioned at the poles, where asin(z) with
+        // z ~ 1 loses float precision and speckles the parallels
+        float colat = max(length(d.xy), 1e-7);
+        float lat = atan(d.z, colat);
         float lon = atan(d.y, d.x);
-        // fade meridian lines near the poles where they converge
-        float poleFade = smoothstep(0.0, 0.03, 1.5707963 - abs(lat));
-        float minor = max(gridLine(lat, uStepMinor), gridLine(lon, uStepMinor) * poleFade);
-        float major = max(gridLine(lat, uStepMajor), gridLine(lon, uStepMajor) * poleFade);
+
+        // parallels (constant angular distance on the sphere)
+        float minor = lineAt(distToMult(lat, uStepMinor));
+        float major = lineAt(distToMult(lat, uStepMajor));
+
+        // meridians: physical distance = dLon * cos(lat); thinned toward
+        // the poles by a CONTINUOUS two-octave blend (spacing doubles as
+        // meridians converge, the finer octave fading out smoothly)
+        float o = max(0.0, log2(0.7 / colat));
+        float b = floor(o);
+        float f = o - b;
+        float sFine = uStepMinor * exp2(b);
+        float merFine = lineAt(distToMult(lon, sFine) * colat) * (1.0 - f);
+        float merCoarse = lineAt(distToMult(lon, sFine * 2.0) * colat);
+        float mer = max(merCoarse, merFine);
+        float sFineM = uStepMajor * exp2(b);
+        float merM = max(lineAt(distToMult(lon, sFineM * 2.0) * colat),
+                         lineAt(distToMult(lon, sFineM) * colat) * (1.0 - f));
+        minor = max(minor, mer);
+        major = max(major, merM);
+
         // emphasized fundamental circle (equator / ecliptic / horizon)
-        float eq = 1.0 - min(abs(lat) / (fwidth(lat) * 1.6), 1.0);
+        float eq = lineAt(abs(lat));
         float a = uOpacity * (0.4 * minor + 0.75 * major + 1.0 * eq);
         if (a < 0.004) discard;
         gl_FragColor = vec4(uColor, min(a, 0.95));

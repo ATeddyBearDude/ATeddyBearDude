@@ -238,7 +238,13 @@ export class SceneManager {
     //   azimuthal: scene -> local ENU at the observer site (per-frame).
     const mSceneToEcl = [[1, 0, 0], [0, 0, -1], [0, 1, 0]];
     const mkGridSphere = (color, opacity, frameM3) => {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), makeSkyGridShaderMaterial(color, opacity));
+      // a CUBE, not a sphere: the shader only needs the per-pixel ray
+      // direction (normalize(vDir) is exact for any enclosing shape), and
+      // screen-space derivatives kink at triangle edges — a cube has 12
+      // huge triangles, so a telescope FOV almost never contains an edge
+      // (a tessellated sphere put dozens of edges in view, dashing the
+      // thin grid lines)
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), makeSkyGridShaderMaterial(color, opacity));
       if (frameM3) setMatrix3(mesh.material.uniforms.uFrameFromScene.value, frameM3);
       mesh.renderOrder = -49;
       mesh.frustumCulled = false;
@@ -543,6 +549,7 @@ export class SceneManager {
     if (li < 0) li = LADDER.length - 1;
     const stepMinor = LADDER[li] * DEG;
     const stepMajor = LADDER[Math.max(0, li - 1)] * DEG;
+    const pixAng = (fovNow * DEG) / (this.overlayEl.clientHeight || 800);
     const setGrid = (mesh, on, scale) => {
       mesh.visible = !!on;
       if (!mesh.visible) return;
@@ -550,6 +557,7 @@ export class SceneManager {
       mesh.scale.setScalar(scale);
       mesh.material.uniforms.uStepMinor.value = stepMinor;
       mesh.material.uniforms.uStepMajor.value = stepMajor;
+      mesh.material.uniforms.uPixAng.value = pixAng;
     };
     setGrid(this.gridEqSky, opts.gridEqSky, 3.4e7);
     setGrid(this.gridEclSky, opts.gridEclSky, 3.3e7);
