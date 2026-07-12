@@ -177,7 +177,12 @@ Sky grids (equatorial, ecliptic, and a new **azimuthal/horizon grid** with
 N/E/S/W cardinal labels, anchored to the observer site) are drawn
 analytically in a fragment shader: anti-aliased, never polygonal, and the
 angular step **subdivides automatically as you zoom** (30° → … → 0.01°),
-with the equator/ecliptic/horizon emphasized.
+with the equator/ecliptic/horizon emphasized. In from-body view the
+equatorial grid is the **observing body's equator of date** — from Mars it
+tilts to Mars's celestial pole (verified to machine precision), and from
+Earth it precesses with the real axis (0.149° from the J2000 pole in 2026,
+exactly 26 years × 20″/yr). In orbit/free modes it's the classic Earth
+J2000 RA/Dec grid.
 
 ### Rotation & precession
 

@@ -12,7 +12,7 @@ import * as THREE from '../vendor/three.module.js';
 import { KM_PER_UNIT, KM_PER_AU, UNITS_PER_AU, DEG, GM } from './const.js';
 import { BODIES, BODY_BY_ID, childrenOf } from './catalog.js';
 import { V, M3 } from './kepler.js';
-import { M_EQJ_FROM_ECL } from './ephemeris.js';
+import { M_EQJ_FROM_ECL, eclToEqj } from './ephemeris.js';
 import { bodyTexture, proceduralTexture, ringTexture, fileTexture, glowTexture } from './textures.js';
 import { makePlanetMaterial, makeSunMaterial, makeRingMaterial, makeAtmosphereMaterial, makeBeltMaterial, makeSkyMaterial, makeSkyGridShaderMaterial, makeStarPointsMaterial, MAX_OCCLUDERS } from './shaders.js';
 
@@ -245,7 +245,8 @@ export class SceneManager {
       this.scene.add(mesh);
       return mesh;
     };
-    this.gridEqSky = mkGridSphere(0x5fc287, 0.85, M3.mul(M_EQJ_FROM_ECL, mSceneToEcl));
+    this._eqjFromScene = M3.mul(M_EQJ_FROM_ECL, mSceneToEcl);
+    this.gridEqSky = mkGridSphere(0x5fc287, 0.85, this._eqjFromScene);
     this.gridEclSky = mkGridSphere(0xc2b25f, 0.6, mSceneToEcl);
     this.gridAzSky = mkGridSphere(0x6f9fdf, 0.9, null);
 
@@ -552,6 +553,25 @@ export class SceneManager {
     };
     setGrid(this.gridEqSky, opts.gridEqSky, 3.4e7);
     setGrid(this.gridEclSky, opts.gridEclSky, 3.3e7);
+    // In from-body view the equatorial grid belongs to the OBSERVING body:
+    // its celestial sphere is defined by its own equator of date (from
+    // Mars the grid tilts to Mars's pole; over long time skips it precesses
+    // with the axis). Elsewhere it is Earth's classic J2000 RA/Dec grid.
+    if (this.gridEqSky.visible) {
+      let frame = this._eqjFromScene;
+      if (view.centerBodyId) {
+        const mo = snap.orient.get(view.centerBodyId);
+        const poleEcl = [mo[0][2], mo[1][2], mo[2][2]];
+        const poleEqj = V.norm(eclToEqj(poleEcl));
+        let q = V.cross([0, 0, 1], poleEqj);
+        q = V.len(q) < 1e-9 ? [1, 0, 0] : V.norm(q);
+        const yv = V.cross(poleEqj, q);
+        // rows map EQJ -> body-equator frame; then compose with scene->EQJ
+        const rows = [q, yv, poleEqj];
+        frame = M3.mul(rows, this._eqjFromScene);
+      }
+      setMatrix3(this.gridEqSky.material.uniforms.uFrameFromScene.value, frame);
+    }
 
     // azimuthal grid: local ENU frame at the observer site on the viewed
     // body (from-body mode only — a horizon needs a place to stand)
